@@ -3,10 +3,14 @@ import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mic, ThumbsUp, ThumbsDown, RefreshCw } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+
+const API_KEY = import.meta.env.VITE_BRICKLLM_API_KEY;
+const API_URL = 'https://api.bricksllm.com/v1';
+const WS_URL = 'wss://api.bricksllm.com/v1/realtime';
 
 interface UIRequirement {
   text: string;
@@ -28,11 +32,20 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   // WebSocket setup
   useEffect(() => {
-    ws.current = new WebSocket('wss://your-websocket-api-url');
+    ws.current = new WebSocket(`${WS_URL}?model=gpt-4o-realtime-preview-2024-10-01`);
+    ws.current.onopen = () => {
+      ws.current?.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["text"],
+          instructions: "Please assist the user with UI generation.",
+        }
+      }));
+    };
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      // Handle real-time updates here
       console.log('Received WebSocket message:', data);
+      // Handle real-time updates here
     };
 
     return () => {
@@ -40,7 +53,6 @@ const AdaptiveUIGenerator: React.FC = () => {
     };
   }, []);
 
-  // Voice input functionality
   const startListening = () => {
     setIsListening(true);
     // Implement speech recognition here
@@ -57,14 +69,23 @@ const AdaptiveUIGenerator: React.FC = () => {
   // AI-generated UI components
   const generateUI = useMutation({
     mutationFn: async (reqs: UIRequirement[]) => {
-      // Replace with actual API call to BricksLLM
-      const response = await fetch('https://api.bricksllm.com/generate-ui', {
+      const response = await fetch(`${API_URL}/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requirements: reqs }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "o1-preview",
+          messages: [
+            { role: "system", content: "You are an AI that generates UI components based on requirements." },
+            { role: "user", content: `Generate UI components for these requirements: ${reqs.map(r => r.text).join(', ')}` }
+          ],
+        }),
       });
       if (!response.ok) throw new Error('Failed to generate UI');
-      return await response.json();
+      const data = await response.json();
+      return JSON.parse(data.choices[0].message.content);
     },
     onSuccess: (data) => {
       setGeneratedUIs(data.components);
@@ -79,8 +100,9 @@ const AdaptiveUIGenerator: React.FC = () => {
   const { data: abTestResults } = useQuery({
     queryKey: ['abTestResults'],
     queryFn: async () => {
-      // Replace with actual API call
-      const response = await fetch('https://api.example.com/ab-test-results');
+      const response = await fetch(`${API_URL}/ab-test-results`, {
+        headers: { 'Authorization': `Bearer ${API_KEY}` },
+      });
       if (!response.ok) throw new Error('Failed to fetch A/B test results');
       return await response.json();
     },
@@ -96,8 +118,14 @@ const AdaptiveUIGenerator: React.FC = () => {
   };
 
   const handleFeedback = (id: string, isPositive: boolean) => {
-    // Send feedback to the server
-    ws.current?.send(JSON.stringify({ type: 'feedback', id, isPositive }));
+    ws.current?.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: `Feedback for UI ${id}: ${isPositive ? 'Positive' : 'Negative'}` }]
+      }
+    }));
     toast({ title: 'Feedback Sent', description: 'Thank you for your feedback!' });
   };
 
