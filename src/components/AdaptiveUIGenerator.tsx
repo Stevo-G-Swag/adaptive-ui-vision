@@ -19,22 +19,19 @@ const AdaptiveUIGenerator: React.FC = () => {
   const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    ws.current = new WebSocket(WS_URL, {
-      headers: {
-        "Authorization": `Bearer ${API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
-    });
+    ws.current = new WebSocket(WS_URL);
 
     ws.current.onopen = () => {
       console.log("Connected to server.");
-      ws.current?.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["text"],
-          instructions: "Please assist the user with UI generation.",
-        }
-      }));
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({
+          type: "response.create",
+          response: {
+            modalities: ["text"],
+            instructions: "Please assist the user with UI generation.",
+          }
+        }));
+      }
     };
 
     ws.current.onmessage = (event) => {
@@ -44,26 +41,35 @@ const AdaptiveUIGenerator: React.FC = () => {
     };
 
     return () => {
-      ws.current?.close();
+      if (ws.current) {
+        ws.current.close();
+      }
     };
   }, []);
 
   const startListening = () => {
     setIsListening(true);
-    // Implement speech recognition here (unchanged)
-    // For example, using the Web Speech API
-    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setRequirements([...requirements, { text: transcript }]);
-    };
-    recognition.onend = () => setIsListening(false);
-    recognition.start();
+    // Implement speech recognition here
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setRequirements(prevRequirements => [...prevRequirements, transcript]);
+      };
+      recognition.onend = () => setIsListening(false);
+      recognition.start();
+    } else {
+      console.error('Speech recognition not supported');
+      setIsListening(false);
+    }
   };
 
   const generateUI = useMutation({
     mutationFn: async (reqs: string[]) => {
-      if (!ws.current) throw new Error('WebSocket not connected');
+      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+        throw new Error('WebSocket not connected');
+      }
       
       ws.current.send(JSON.stringify({
         type: 'conversation.item.create',
@@ -90,7 +96,7 @@ const AdaptiveUIGenerator: React.FC = () => {
   });
 
   const onSubmit = handleSubmit(({ requirement }) => {
-    setRequirements([...requirements, requirement]);
+    setRequirements(prevRequirements => [...prevRequirements, requirement]);
     reset();
   });
 
@@ -99,7 +105,7 @@ const AdaptiveUIGenerator: React.FC = () => {
   };
 
   const handleFeedback = (isPositive: boolean) => {
-    if (!ws.current) return;
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
     
     ws.current.send(JSON.stringify({
       type: 'conversation.item.create',
