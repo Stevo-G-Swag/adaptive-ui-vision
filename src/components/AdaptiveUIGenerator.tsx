@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,32 +31,40 @@ const AdaptiveUIGenerator: React.FC = () => {
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
   const { toast } = useToast();
   const ws = useRef<WebSocket | null>(null);
+  const reconnectAttempts = useRef(0);
+  const maxReconnectAttempts = 5;
 
-  useEffect(() => {
-    const connectWebSocket = () => {
-      ws.current = new WebSocket(WS_URL);
+  const connectWebSocket = useCallback(() => {
+    ws.current = new WebSocket(WS_URL);
 
-      ws.current.onopen = () => {
-        console.log("Connected to server.");
-        sendInitialMessage();
-      };
-
-      ws.current.onmessage = (event) => {
-        const message = JSON.parse(event.data.toString());
-        handleIncomingMessage(message);
-      };
-
-      ws.current.onerror = (error) => {
-        console.error("WebSocket error:", error);
-        toast({ title: 'Connection Error', description: 'Failed to connect to the server. Please try again.', variant: 'destructive' });
-      };
-
-      ws.current.onclose = () => {
-        console.log("WebSocket connection closed. Attempting to reconnect...");
-        setTimeout(connectWebSocket, 5000);
-      };
+    ws.current.onopen = () => {
+      console.log("Connected to server.");
+      reconnectAttempts.current = 0;
+      sendInitialMessage();
     };
 
+    ws.current.onmessage = (event) => {
+      const message = JSON.parse(event.data.toString());
+      handleIncomingMessage(message);
+    };
+
+    ws.current.onerror = (error) => {
+      console.error("WebSocket error:", error);
+      toast({ title: 'Connection Error', description: 'Failed to connect to the server. Please try again.', variant: 'destructive' });
+    };
+
+    ws.current.onclose = () => {
+      console.log("WebSocket connection closed. Attempting to reconnect...");
+      if (reconnectAttempts.current < maxReconnectAttempts) {
+        reconnectAttempts.current++;
+        setTimeout(connectWebSocket, 5000 * reconnectAttempts.current);
+      } else {
+        toast({ title: 'Connection Failed', description: 'Unable to establish a connection after multiple attempts. Please try again later.', variant: 'destructive' });
+      }
+    };
+  }, [toast]);
+
+  useEffect(() => {
     connectWebSocket();
 
     return () => {
@@ -64,7 +72,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         ws.current.close();
       }
     };
-  }, []);
+  }, [connectWebSocket]);
 
   const sendInitialMessage = () => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
@@ -86,29 +94,7 @@ const AdaptiveUIGenerator: React.FC = () => {
     }
   };
 
-  const startListening = () => {
-    setIsListening(true);
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (event) => {
-        const transcript = Array.from(event.results)
-          .map(result => result[0].transcript)
-          .join('');
-        setConversation(prev => [...prev, `User: ${transcript}`]);
-        sendMessage(transcript);
-      };
-      recognition.onend = () => setIsListening(false);
-      recognition.start();
-    } else {
-      console.error('Speech recognition not supported');
-      setIsListening(false);
-    }
-  };
-
-  const sendMessage = (message: string) => {
+  const sendMessage = useCallback((message: string) => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
       toast({ title: 'Connection Error', description: 'Not connected to the server. Please try again.', variant: 'destructive' });
       return;
@@ -129,7 +115,7 @@ const AdaptiveUIGenerator: React.FC = () => {
       console.error('Error sending message:', error);
       toast({ title: 'Send Error', description: 'Failed to send message. Please try again.', variant: 'destructive' });
     }
-  };
+  }, [toast]);
 
   const onSubmit = handleSubmit(({ message }) => {
     setConversation(prev => [...prev, `User: ${message}`]);
