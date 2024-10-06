@@ -3,18 +3,32 @@ import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Mic, ThumbsUp, ThumbsDown } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Mic, Settings, FileText } from 'lucide-react';
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
 
 const AdaptiveUIGenerator: React.FC = () => {
-  const [requirements, setRequirements] = useState<string[]>([]);
-  const [generatedUI, setGeneratedUI] = useState<string>('');
+  const [conversation, setConversation] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
-  const { register, handleSubmit, reset } = useForm<{ requirement: string }>();
+  const [systemMessage, setSystemMessage] = useState<string>(
+    "Assist a real-time software developer in interacting with a full-stack agentic framework including creating and editing files using a cache API."
+  );
+  const [voice, setVoice] = useState<string>("Alloy");
+  const [serverTurnDetection, setServerTurnDetection] = useState<string>("Voice activity");
+  const [threshold, setThreshold] = useState<number>(0.5);
+  const [prefixPadding, setPrefixPadding] = useState<number>(300);
+  const [silenceDuration, setSilenceDuration] = useState<number>(500);
+  const [temperature, setTemperature] = useState<number>(0.8);
+  const [maxTokens, setMaxTokens] = useState<number>(4096);
+  const { register, handleSubmit, reset } = useForm<{ message: string }>();
   const { toast } = useToast();
   const ws = useRef<WebSocket | null>(null);
 
@@ -44,7 +58,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         type: "response.create",
         response: {
           modalities: ["text"],
-          instructions: "You are an AI assistant that generates UI components based on user requirements. Provide detailed descriptions of UI elements.",
+          instructions: systemMessage,
         }
       }));
     }
@@ -52,9 +66,9 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   const handleIncomingMessage = (message: any) => {
     if (message.type === 'response.text.delta') {
-      setGeneratedUI(prev => prev + message.delta);
+      setConversation(prev => [...prev, message.delta]);
     } else if (message.type === 'response.done') {
-      toast({ title: 'UI Generation Complete', description: 'The UI components have been generated based on your requirements.' });
+      toast({ title: 'Response Complete', description: 'The AI has finished its response.' });
     }
   };
 
@@ -69,12 +83,8 @@ const AdaptiveUIGenerator: React.FC = () => {
         const transcript = Array.from(event.results)
           .map(result => result[0].transcript)
           .join('');
-        setRequirements(prevRequirements => {
-          const updatedRequirements = [...prevRequirements];
-          updatedRequirements[updatedRequirements.length - 1] = transcript;
-          return updatedRequirements;
-        });
-        generateUIRealtime(transcript);
+        setConversation(prev => [...prev, `User: ${transcript}`]);
+        sendMessage(transcript);
       };
       recognition.onend = () => setIsListening(false);
       recognition.start();
@@ -84,7 +94,7 @@ const AdaptiveUIGenerator: React.FC = () => {
     }
   };
 
-  const generateUIRealtime = (requirement: string) => {
+  const sendMessage = (message: string) => {
     if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
     
     ws.current.send(JSON.stringify({
@@ -92,92 +102,149 @@ const AdaptiveUIGenerator: React.FC = () => {
       item: {
         type: 'message',
         role: 'user',
-        content: [{
-          type: 'input_text',
-          text: `Generate UI components for this requirement: ${requirement}`
-        }]
+        content: [{ type: 'input_text', text: message }]
       }
     }));
 
     ws.current.send(JSON.stringify({ type: 'response.create' }));
   };
 
-  const onSubmit = handleSubmit(({ requirement }) => {
-    setRequirements(prevRequirements => [...prevRequirements, requirement]);
-    generateUIRealtime(requirement);
+  const onSubmit = handleSubmit(({ message }) => {
+    setConversation(prev => [...prev, `User: ${message}`]);
+    sendMessage(message);
     reset();
   });
 
-  const handleGenerateUI = () => {
-    const allRequirements = requirements.join(', ');
-    generateUIRealtime(allRequirements);
-  };
-
-  const handleFeedback = (isPositive: boolean) => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
-    
-    ws.current.send(JSON.stringify({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: `Feedback for UI: ${isPositive ? 'Positive' : 'Negative'}` }]
-      }
-    }));
-    toast({ title: 'Feedback Sent', description: 'Thank you for your feedback!' });
-  };
-
   return (
     <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
-        <CardTitle>Adaptive UI Generator</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <Textarea
-            {...register('requirement')}
-            placeholder="Enter your UI requirements..."
-            className="w-full"
-          />
-          <div className="flex justify-between">
-            <Button type="submit">Add Requirement</Button>
-            <Button type="button" onClick={startListening} disabled={isListening}>
-              {isListening ? 'Listening...' : <Mic className="mr-2" />}
-              Voice Input
-            </Button>
-          </div>
-        </form>
-
-        <div className="mt-6">
-          <h3 className="text-lg font-semibold mb-2">Requirements:</h3>
-          <ul className="list-disc pl-5">
-            {requirements.map((req, index) => (
-              <li key={index}>{req}</li>
-            ))}
-          </ul>
+      <Tabs defaultValue="conversation" className="w-full">
+        <div className="flex justify-between items-center p-4 border-b">
+          <h1 className="text-2xl font-bold">Realtime</h1>
+          <TabsList>
+            <TabsTrigger value="conversation">Conversation</TabsTrigger>
+            <TabsTrigger value="settings"><Settings className="w-4 h-4 mr-2" />Settings</TabsTrigger>
+            <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
+          </TabsList>
         </div>
 
-        <Button onClick={handleGenerateUI} className="mt-4">
-          Generate UI
-        </Button>
+        <TabsContent value="conversation" className="p-4">
+          <div className="h-[60vh] overflow-y-auto mb-4 p-4 bg-gray-100 rounded-md">
+            {conversation.map((msg, index) => (
+              <div key={index} className="mb-2">{msg}</div>
+            ))}
+          </div>
+          <form onSubmit={onSubmit} className="flex space-x-2">
+            <Input {...register('message')} placeholder="Type your message..." className="flex-grow" />
+            <Button type="submit">Send</Button>
+            <Button type="button" onClick={startListening} variant="outline">
+              <Mic className={`w-4 h-4 ${isListening ? 'text-red-500' : ''}`} />
+            </Button>
+          </form>
+        </TabsContent>
 
-        {generatedUI && (
-          <div className="mt-6">
-            <h3 className="text-lg font-semibold mb-2">Generated UI:</h3>
-            <div className="p-4 border rounded whitespace-pre-wrap">
-              {generatedUI}
-            </div>
-            <div className="flex justify-end mt-2">
-              <Button onClick={() => handleFeedback(true)} variant="outline" size="sm" className="mr-2">
-                <ThumbsUp className="mr-1" /> Like
+        <TabsContent value="settings" className="p-4 space-y-4">
+          <div>
+            <Label htmlFor="systemMessage">System Instructions</Label>
+            <Textarea
+              id="systemMessage"
+              value={systemMessage}
+              onChange={(e) => setSystemMessage(e.target.value)}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="voice">Voice</Label>
+            <Select value={voice} onValueChange={setVoice}>
+              <SelectTrigger id="voice">
+                <SelectValue placeholder="Select a voice" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Alloy">Alloy</SelectItem>
+                <SelectItem value="Echo">Echo</SelectItem>
+                <SelectItem value="Shimmer">Shimmer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="serverTurnDetection">Server turn detection</Label>
+            <div className="flex space-x-2 mt-1">
+              <Button
+                variant={serverTurnDetection === "Voice activity" ? "default" : "outline"}
+                onClick={() => setServerTurnDetection("Voice activity")}
+              >
+                Voice activity
               </Button>
-              <Button onClick={() => handleFeedback(false)} variant="outline" size="sm">
-                <ThumbsDown className="mr-1" /> Dislike
+              <Button
+                variant={serverTurnDetection === "Disabled" ? "default" : "outline"}
+                onClick={() => setServerTurnDetection("Disabled")}
+              >
+                Disabled
               </Button>
             </div>
           </div>
-        )}
-      </CardContent>
+          <div>
+            <Label htmlFor="threshold">Threshold</Label>
+            <Slider
+              id="threshold"
+              min={0}
+              max={1}
+              step={0.01}
+              value={[threshold]}
+              onValueChange={([value]) => setThreshold(value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="prefixPadding">Prefix padding</Label>
+            <Slider
+              id="prefixPadding"
+              min={0}
+              max={1000}
+              step={10}
+              value={[prefixPadding]}
+              onValueChange={([value]) => setPrefixPadding(value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="silenceDuration">Silence duration</Label>
+            <Slider
+              id="silenceDuration"
+              min={0}
+              max={2000}
+              step={10}
+              value={[silenceDuration]}
+              onValueChange={([value]) => setSilenceDuration(value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="temperature">Temperature</Label>
+            <Slider
+              id="temperature"
+              min={0}
+              max={2}
+              step={0.01}
+              value={[temperature]}
+              onValueChange={([value]) => setTemperature(value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="maxTokens">Max tokens</Label>
+            <Slider
+              id="maxTokens"
+              min={1}
+              max={8192}
+              step={1}
+              value={[maxTokens]}
+              onValueChange={([value]) => setMaxTokens(value)}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="logs" className="p-4">
+          <div className="h-[60vh] overflow-y-auto p-4 bg-gray-100 rounded-md">
+            <p>Logs will appear here</p>
+          </div>
+        </TabsContent>
+      </Tabs>
     </Card>
   );
 };
