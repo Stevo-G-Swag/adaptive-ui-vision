@@ -1,16 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { useToast } from '@/hooks/use-toast';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Mic, Settings, FileText } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Mic, Settings as SettingsIcon, FileText } from 'lucide-react';
+import Settings from './Settings';
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -66,7 +62,6 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   useEffect(() => {
     connectWebSocket();
-
     return () => {
       if (ws.current) {
         ws.current.close();
@@ -123,6 +118,23 @@ const AdaptiveUIGenerator: React.FC = () => {
     reset();
   });
 
+  const startListening = () => {
+    if (!isListening) {
+      setIsListening(true);
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setConversation(prev => [...prev, `User: ${transcript}`]);
+        sendMessage(transcript);
+      };
+      recognition.onend = () => setIsListening(false);
+      recognition.start();
+    } else {
+      setIsListening(false);
+    }
+  };
+
   return (
     <Card className="w-full max-w-4xl mx-auto">
       <Tabs defaultValue="conversation" className="w-full">
@@ -130,7 +142,7 @@ const AdaptiveUIGenerator: React.FC = () => {
           <h1 className="text-2xl font-bold">Realtime</h1>
           <TabsList>
             <TabsTrigger value="conversation">Conversation</TabsTrigger>
-            <TabsTrigger value="settings"><Settings className="w-4 h-4 mr-2" />Settings</TabsTrigger>
+            <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />Settings</TabsTrigger>
             <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
           </TabsList>
         </div>
@@ -150,101 +162,25 @@ const AdaptiveUIGenerator: React.FC = () => {
           </form>
         </TabsContent>
 
-        <TabsContent value="settings" className="p-4 space-y-4">
-          <div>
-            <Label htmlFor="systemMessage">System Instructions</Label>
-            <Textarea
-              id="systemMessage"
-              value={systemMessage}
-              onChange={(e) => setSystemMessage(e.target.value)}
-              className="mt-1"
-            />
-          </div>
-          <div>
-            <Label htmlFor="voice">Voice</Label>
-            <Select value={voice} onValueChange={setVoice}>
-              <SelectTrigger id="voice">
-                <SelectValue placeholder="Select a voice" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Alloy">Alloy</SelectItem>
-                <SelectItem value="Echo">Echo</SelectItem>
-                <SelectItem value="Shimmer">Shimmer</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label htmlFor="serverTurnDetection">Server turn detection</Label>
-            <div className="flex space-x-2 mt-1">
-              <Button
-                variant={serverTurnDetection === "Voice activity" ? "default" : "outline"}
-                onClick={() => setServerTurnDetection("Voice activity")}
-              >
-                Voice activity
-              </Button>
-              <Button
-                variant={serverTurnDetection === "Disabled" ? "default" : "outline"}
-                onClick={() => setServerTurnDetection("Disabled")}
-              >
-                Disabled
-              </Button>
-            </div>
-          </div>
-          <div>
-            <Label htmlFor="threshold">Threshold</Label>
-            <Slider
-              id="threshold"
-              min={0}
-              max={1}
-              step={0.01}
-              value={[threshold]}
-              onValueChange={([value]) => setThreshold(value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="prefixPadding">Prefix padding</Label>
-            <Slider
-              id="prefixPadding"
-              min={0}
-              max={1000}
-              step={10}
-              value={[prefixPadding]}
-              onValueChange={([value]) => setPrefixPadding(value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="silenceDuration">Silence duration</Label>
-            <Slider
-              id="silenceDuration"
-              min={0}
-              max={2000}
-              step={10}
-              value={[silenceDuration]}
-              onValueChange={([value]) => setSilenceDuration(value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="temperature">Temperature</Label>
-            <Slider
-              id="temperature"
-              min={0}
-              max={2}
-              step={0.01}
-              value={[temperature]}
-              onValueChange={([value]) => setTemperature(value)}
-            />
-          </div>
-          <div>
-            <Label htmlFor="maxTokens">Max tokens</Label>
-            <Slider
-              id="maxTokens"
-              min={1}
-              max={8192}
-              step={1}
-              value={[maxTokens]}
-              onValueChange={([value]) => setMaxTokens(value)}
-            />
-          </div>
+        <TabsContent value="settings" className="p-4">
+          <Settings
+            systemMessage={systemMessage}
+            setSystemMessage={setSystemMessage}
+            voice={voice}
+            setVoice={setVoice}
+            serverTurnDetection={serverTurnDetection}
+            setServerTurnDetection={setServerTurnDetection}
+            threshold={threshold}
+            setThreshold={setThreshold}
+            prefixPadding={prefixPadding}
+            setPrefixPadding={setPrefixPadding}
+            silenceDuration={silenceDuration}
+            setSilenceDuration={setSilenceDuration}
+            temperature={temperature}
+            setTemperature={setTemperature}
+            maxTokens={maxTokens}
+            setMaxTokens={setMaxTokens}
+          />
         </TabsContent>
 
         <TabsContent value="logs" className="p-4">
