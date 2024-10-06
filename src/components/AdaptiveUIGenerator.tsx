@@ -23,21 +23,12 @@ const AdaptiveUIGenerator: React.FC = () => {
 
     ws.current.onopen = () => {
       console.log("Connected to server.");
-      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({
-          type: "response.create",
-          response: {
-            modalities: ["text"],
-            instructions: "Please assist the user with UI generation.",
-          }
-        }));
-      }
+      sendInitialMessage();
     };
 
     ws.current.onmessage = (event) => {
       const message = JSON.parse(event.data.toString());
-      console.log(message);
-      // Handle incoming messages here
+      handleIncomingMessage(message);
     };
 
     return () => {
@@ -47,15 +38,43 @@ const AdaptiveUIGenerator: React.FC = () => {
     };
   }, []);
 
+  const sendInitialMessage = () => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["text"],
+          instructions: "You are an AI assistant that generates UI components based on user requirements. Provide detailed descriptions of UI elements.",
+        }
+      }));
+    }
+  };
+
+  const handleIncomingMessage = (message: any) => {
+    if (message.type === 'response.text.delta') {
+      setGeneratedUI(prev => prev + message.delta);
+    } else if (message.type === 'response.done') {
+      toast({ title: 'UI Generation Complete', description: 'The UI components have been generated based on your requirements.' });
+    }
+  };
+
   const startListening = () => {
     setIsListening(true);
-    // Implement speech recognition here
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        setRequirements(prevRequirements => [...prevRequirements, transcript]);
+        const transcript = Array.from(event.results)
+          .map(result => result[0].transcript)
+          .join('');
+        setRequirements(prevRequirements => {
+          const updatedRequirements = [...prevRequirements];
+          updatedRequirements[updatedRequirements.length - 1] = transcript;
+          return updatedRequirements;
+        });
+        generateUIRealtime(transcript);
       };
       recognition.onend = () => setIsListening(false);
       recognition.start();
@@ -65,43 +84,33 @@ const AdaptiveUIGenerator: React.FC = () => {
     }
   };
 
-  const generateUI = useMutation({
-    mutationFn: async (reqs: string[]) => {
-      if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-        throw new Error('WebSocket not connected');
+  const generateUIRealtime = (requirement: string) => {
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+    
+    ws.current.send(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_text',
+          text: `Generate UI components for this requirement: ${requirement}`
+        }]
       }
-      
-      ws.current.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'user',
-          content: [{
-            type: 'input_text',
-            text: `Generate UI components for these requirements: ${reqs.join(', ')}`
-          }]
-        }
-      }));
+    }));
 
-      // For demonstration, we'll return a placeholder response
-      return "Generated UI placeholder";
-    },
-    onSuccess: (data) => {
-      setGeneratedUI(data);
-      toast({ title: 'UI Generated Successfully', description: 'New UI components have been created based on your requirements.' });
-    },
-    onError: (error) => {
-      toast({ title: 'Error', description: 'Failed to generate UI components. Please try again.', variant: 'destructive' });
-    },
-  });
+    ws.current.send(JSON.stringify({ type: 'response.create' }));
+  };
 
   const onSubmit = handleSubmit(({ requirement }) => {
     setRequirements(prevRequirements => [...prevRequirements, requirement]);
+    generateUIRealtime(requirement);
     reset();
   });
 
   const handleGenerateUI = () => {
-    generateUI.mutate(requirements);
+    const allRequirements = requirements.join(', ');
+    generateUIRealtime(allRequirements);
   };
 
   const handleFeedback = (isPositive: boolean) => {
@@ -148,14 +157,14 @@ const AdaptiveUIGenerator: React.FC = () => {
           </ul>
         </div>
 
-        <Button onClick={handleGenerateUI} className="mt-4" disabled={generateUI.isPending}>
+        <Button onClick={handleGenerateUI} className="mt-4">
           Generate UI
         </Button>
 
         {generatedUI && (
           <div className="mt-6">
             <h3 className="text-lg font-semibold mb-2">Generated UI:</h3>
-            <div className="p-4 border rounded">
+            <div className="p-4 border rounded whitespace-pre-wrap">
               {generatedUI}
             </div>
             <div className="flex justify-end mt-2">
