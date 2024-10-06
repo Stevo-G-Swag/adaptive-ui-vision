@@ -4,36 +4,30 @@ import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, ThumbsUp, ThumbsDown, RefreshCw } from 'lucide-react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { Mic, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
 
-const API_KEY = import.meta.env.VITE_BRICKLLM_API_KEY;
-const API_URL = 'https://api.bricksllm.com/v1';
-const WS_URL = 'wss://api.bricksllm.com/v1/realtime';
-
-interface UIRequirement {
-  text: string;
-}
-
-interface GeneratedUI {
-  id: string;
-  component: React.ReactNode;
-}
+const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
 
 const AdaptiveUIGenerator: React.FC = () => {
-  const [requirements, setRequirements] = useState<UIRequirement[]>([]);
-  const [generatedUIs, setGeneratedUIs] = useState<GeneratedUI[]>([]);
-  const [activeVariant, setActiveVariant] = useState<'A' | 'B'>('A');
+  const [requirements, setRequirements] = useState<string[]>([]);
+  const [generatedUI, setGeneratedUI] = useState<string>('');
   const [isListening, setIsListening] = useState(false);
   const { register, handleSubmit, reset } = useForm<{ requirement: string }>();
   const { toast } = useToast();
   const ws = useRef<WebSocket | null>(null);
 
-  // WebSocket setup
   useEffect(() => {
-    ws.current = new WebSocket(`${WS_URL}?model=gpt-4o-realtime-preview-2024-10-01`);
+    ws.current = new WebSocket(WS_URL, {
+      headers: {
+        "Authorization": `Bearer ${API_KEY}`,
+        "OpenAI-Beta": "realtime=v1",
+      },
+    });
+
     ws.current.onopen = () => {
+      console.log("Connected to server.");
       ws.current?.send(JSON.stringify({
         type: "response.create",
         response: {
@@ -42,10 +36,11 @@ const AdaptiveUIGenerator: React.FC = () => {
         }
       }));
     };
+
     ws.current.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('Received WebSocket message:', data);
-      // Handle real-time updates here
+      const message = JSON.parse(event.data.toString());
+      console.log(message);
+      // Handle incoming messages here
     };
 
     return () => {
@@ -55,7 +50,7 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   const startListening = () => {
     setIsListening(true);
-    // Implement speech recognition here
+    // Implement speech recognition here (unchanged)
     // For example, using the Web Speech API
     const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
     recognition.onresult = (event) => {
@@ -66,29 +61,27 @@ const AdaptiveUIGenerator: React.FC = () => {
     recognition.start();
   };
 
-  // AI-generated UI components
   const generateUI = useMutation({
-    mutationFn: async (reqs: UIRequirement[]) => {
-      const response = await fetch(`${API_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: "o1-preview",
-          messages: [
-            { role: "system", content: "You are an AI that generates UI components based on requirements." },
-            { role: "user", content: `Generate UI components for these requirements: ${reqs.map(r => r.text).join(', ')}` }
-          ],
-        }),
-      });
-      if (!response.ok) throw new Error('Failed to generate UI');
-      const data = await response.json();
-      return JSON.parse(data.choices[0].message.content);
+    mutationFn: async (reqs: string[]) => {
+      if (!ws.current) throw new Error('WebSocket not connected');
+      
+      ws.current.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{
+            type: 'input_text',
+            text: `Generate UI components for these requirements: ${reqs.join(', ')}`
+          }]
+        }
+      }));
+
+      // For demonstration, we'll return a placeholder response
+      return "Generated UI placeholder";
     },
     onSuccess: (data) => {
-      setGeneratedUIs(data.components);
+      setGeneratedUI(data);
       toast({ title: 'UI Generated Successfully', description: 'New UI components have been created based on your requirements.' });
     },
     onError: (error) => {
@@ -96,20 +89,8 @@ const AdaptiveUIGenerator: React.FC = () => {
     },
   });
 
-  // A/B test results
-  const { data: abTestResults } = useQuery({
-    queryKey: ['abTestResults'],
-    queryFn: async () => {
-      const response = await fetch(`${API_URL}/ab-test-results`, {
-        headers: { 'Authorization': `Bearer ${API_KEY}` },
-      });
-      if (!response.ok) throw new Error('Failed to fetch A/B test results');
-      return await response.json();
-    },
-  });
-
   const onSubmit = handleSubmit(({ requirement }) => {
-    setRequirements([...requirements, { text: requirement }]);
+    setRequirements([...requirements, requirement]);
     reset();
   });
 
@@ -117,13 +98,15 @@ const AdaptiveUIGenerator: React.FC = () => {
     generateUI.mutate(requirements);
   };
 
-  const handleFeedback = (id: string, isPositive: boolean) => {
-    ws.current?.send(JSON.stringify({
+  const handleFeedback = (isPositive: boolean) => {
+    if (!ws.current) return;
+    
+    ws.current.send(JSON.stringify({
       type: 'conversation.item.create',
       item: {
         type: 'message',
         role: 'user',
-        content: [{ type: 'input_text', text: `Feedback for UI ${id}: ${isPositive ? 'Positive' : 'Negative'}` }]
+        content: [{ type: 'input_text', text: `Feedback for UI: ${isPositive ? 'Positive' : 'Negative'}` }]
       }
     }));
     toast({ title: 'Feedback Sent', description: 'Thank you for your feedback!' });
@@ -154,59 +137,30 @@ const AdaptiveUIGenerator: React.FC = () => {
           <h3 className="text-lg font-semibold mb-2">Requirements:</h3>
           <ul className="list-disc pl-5">
             {requirements.map((req, index) => (
-              <li key={index}>{req.text}</li>
+              <li key={index}>{req}</li>
             ))}
           </ul>
         </div>
 
         <Button onClick={handleGenerateUI} className="mt-4" disabled={generateUI.isPending}>
-          {generateUI.isPending ? <RefreshCw className="mr-2 animate-spin" /> : 'Generate UI'}
+          Generate UI
         </Button>
 
-        {generatedUIs.length > 0 && (
-          <Tabs value={activeVariant} onValueChange={(value) => setActiveVariant(value as 'A' | 'B')} className="mt-6">
-            <TabsList>
-              <TabsTrigger value="A">Variant A</TabsTrigger>
-              <TabsTrigger value="B">Variant B</TabsTrigger>
-            </TabsList>
-            <TabsContent value="A">
-              {generatedUIs[0].component}
-              <div className="flex justify-end mt-2">
-                <Button onClick={() => handleFeedback(generatedUIs[0].id, true)} variant="outline" size="sm" className="mr-2">
-                  <ThumbsUp className="mr-1" /> Like
-                </Button>
-                <Button onClick={() => handleFeedback(generatedUIs[0].id, false)} variant="outline" size="sm">
-                  <ThumbsDown className="mr-1" /> Dislike
-                </Button>
-              </div>
-            </TabsContent>
-            <TabsContent value="B">
-              {generatedUIs[1]?.component || <p>No variant B available</p>}
-              {generatedUIs[1] && (
-                <div className="flex justify-end mt-2">
-                  <Button onClick={() => handleFeedback(generatedUIs[1].id, true)} variant="outline" size="sm" className="mr-2">
-                    <ThumbsUp className="mr-1" /> Like
-                  </Button>
-                  <Button onClick={() => handleFeedback(generatedUIs[1].id, false)} variant="outline" size="sm">
-                    <ThumbsDown className="mr-1" /> Dislike
-                  </Button>
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        )}
-
-        {abTestResults && (
-          <Card className="mt-6">
-            <CardHeader>
-              <CardTitle>A/B Test Results</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {/* Display A/B test results here */}
-              <p>Variant A: {abTestResults.variantA}% preference</p>
-              <p>Variant B: {abTestResults.variantB}% preference</p>
-            </CardContent>
-          </Card>
+        {generatedUI && (
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold mb-2">Generated UI:</h3>
+            <div className="p-4 border rounded">
+              {generatedUI}
+            </div>
+            <div className="flex justify-end mt-2">
+              <Button onClick={() => handleFeedback(true)} variant="outline" size="sm" className="mr-2">
+                <ThumbsUp className="mr-1" /> Like
+              </Button>
+              <Button onClick={() => handleFeedback(false)} variant="outline" size="sm">
+                <ThumbsDown className="mr-1" /> Dislike
+              </Button>
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>
