@@ -33,17 +33,31 @@ const AdaptiveUIGenerator: React.FC = () => {
   const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    ws.current = new WebSocket(WS_URL);
+    const connectWebSocket = () => {
+      ws.current = new WebSocket(WS_URL);
 
-    ws.current.onopen = () => {
-      console.log("Connected to server.");
-      sendInitialMessage();
+      ws.current.onopen = () => {
+        console.log("Connected to server.");
+        sendInitialMessage();
+      };
+
+      ws.current.onmessage = (event) => {
+        const message = JSON.parse(event.data.toString());
+        handleIncomingMessage(message);
+      };
+
+      ws.current.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        toast({ title: 'Connection Error', description: 'Failed to connect to the server. Please try again.', variant: 'destructive' });
+      };
+
+      ws.current.onclose = () => {
+        console.log("WebSocket connection closed. Attempting to reconnect...");
+        setTimeout(connectWebSocket, 5000);
+      };
     };
 
-    ws.current.onmessage = (event) => {
-      const message = JSON.parse(event.data.toString());
-      handleIncomingMessage(message);
-    };
+    connectWebSocket();
 
     return () => {
       if (ws.current) {
@@ -95,18 +109,26 @@ const AdaptiveUIGenerator: React.FC = () => {
   };
 
   const sendMessage = (message: string) => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
+      toast({ title: 'Connection Error', description: 'Not connected to the server. Please try again.', variant: 'destructive' });
+      return;
+    }
     
-    ws.current.send(JSON.stringify({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: message }]
-      }
-    }));
+    try {
+      ws.current.send(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: message }]
+        }
+      }));
 
-    ws.current.send(JSON.stringify({ type: 'response.create' }));
+      ws.current.send(JSON.stringify({ type: 'response.create' }));
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({ title: 'Send Error', description: 'Failed to send message. Please try again.', variant: 'destructive' });
+    }
   };
 
   const onSubmit = handleSubmit(({ message }) => {
