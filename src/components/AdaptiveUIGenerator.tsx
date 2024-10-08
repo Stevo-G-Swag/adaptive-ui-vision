@@ -255,6 +255,7 @@ const AdaptiveUIGenerator: React.FC = () => {
           <Settings
             systemMessage={systemMessage}
             setSystemMessage={setSystemMessage}
+            voice={voice}
             setVoice={setVoice}
             serverTurnDetection={serverTurnDetection}
             setServerTurnDetection={setServerTurnDetection}
