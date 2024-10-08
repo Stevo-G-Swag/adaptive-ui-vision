@@ -24,109 +24,150 @@ interface SettingsProps {
   setMaxTokens: (value: number) => void;
 }
 
-const Settings: React.FC<SettingsProps> = ({
-  systemMessage, setSystemMessage, voice, setVoice, serverTurnDetection, setServerTurnDetection,
-  threshold, setThreshold, prefixPadding, setPrefixPadding, silenceDuration, setSilenceDuration,
-  temperature, setTemperature, maxTokens, setMaxTokens
-}) => {
+const Settings: React.FC<SettingsProps> = (props) => {
   return (
     <div className="space-y-4">
-      <div>
-        <Label htmlFor="systemMessage">System Instructions</Label>
-        <Textarea
-          id="systemMessage"
-          value={systemMessage}
-          onChange={(e) => setSystemMessage(e.target.value)}
-          className="mt-1"
-        />
-      </div>
-      <div>
-        <Label htmlFor="voice">Voice</Label>
-        <Select value={voice} onValueChange={setVoice}>
-          <SelectTrigger id="voice">
-            <SelectValue placeholder="Select a voice" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Alloy">Alloy</SelectItem>
-            <SelectItem value="Echo">Echo</SelectItem>
-            <SelectItem value="Shimmer">Shimmer</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div>
-        <Label htmlFor="serverTurnDetection">Server turn detection</Label>
-        <div className="flex space-x-2 mt-1">
-          <Button
-            variant={serverTurnDetection === "Voice activity" ? "default" : "outline"}
-            onClick={() => setServerTurnDetection("Voice activity")}
-          >
-            Voice activity
-          </Button>
-          <Button
-            variant={serverTurnDetection === "Disabled" ? "default" : "outline"}
-            onClick={() => setServerTurnDetection("Disabled")}
-          >
-            Disabled
-          </Button>
-        </div>
-      </div>
-      <div>
-        <Label htmlFor="threshold">Threshold</Label>
-        <Slider
-          id="threshold"
-          min={0}
-          max={1}
-          step={0.01}
-          value={[threshold]}
-          onValueChange={([value]) => setThreshold(value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="prefixPadding">Prefix padding</Label>
-        <Slider
-          id="prefixPadding"
-          min={0}
-          max={1000}
-          step={10}
-          value={[prefixPadding]}
-          onValueChange={([value]) => setPrefixPadding(value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="silenceDuration">Silence duration</Label>
-        <Slider
-          id="silenceDuration"
-          min={0}
-          max={2000}
-          step={10}
-          value={[silenceDuration]}
-          onValueChange={([value]) => setSilenceDuration(value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="temperature">Temperature</Label>
-        <Slider
-          id="temperature"
-          min={0}
-          max={2}
-          step={0.01}
-          value={[temperature]}
-          onValueChange={([value]) => setTemperature(value)}
-        />
-      </div>
-      <div>
-        <Label htmlFor="maxTokens">Max tokens</Label>
-        <Slider
-          id="maxTokens"
-          min={1}
-          max={8192}
-          step={1}
-          value={[maxTokens]}
-          onValueChange={([value]) => setMaxTokens(value)}
-        />
-      </div>
+      <TextAreaSetting
+        label="System Instructions"
+        value={props.systemMessage}
+        onChange={props.setSystemMessage}
+      />
+      <SelectSetting
+        label="Voice"
+        value={props.voice}
+        onChange={props.setVoice}
+        options={['Alloy', 'Echo', 'Shimmer']}
+      />
+      <ButtonGroupSetting
+        label="Server turn detection"
+        value={props.serverTurnDetection}
+        onChange={props.setServerTurnDetection}
+        options={['Voice activity', 'Disabled']}
+      />
+      <SliderSetting
+        label="Threshold"
+        value={props.threshold}
+        onChange={props.setThreshold}
+        min={0}
+        max={1}
+        step={0.01}
+      />
+      <SliderSetting
+        label="Prefix padding"
+        value={props.prefixPadding}
+        onChange={props.setPrefixPadding}
+        min={0}
+        max={1000}
+        step={10}
+      />
+      <SliderSetting
+        label="Silence duration"
+        value={props.silenceDuration}
+        onChange={props.setSilenceDuration}
+        min={0}
+        max={2000}
+        step={10}
+      />
+      <SliderSetting
+        label="Temperature"
+        value={props.temperature}
+        onChange={props.setTemperature}
+        min={0}
+        max={2}
+        step={0.01}
+      />
+      <SliderSetting
+        label="Max tokens"
+        value={props.maxTokens}
+        onChange={props.setMaxTokens}
+        min={1}
+        max={8192}
+        step={1}
+      />
     </div>
   );
 };
+
+const TextAreaSetting: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}> = ({ label, value, onChange }) => (
+  <div>
+    <Label htmlFor={label}>{label}</Label>
+    <Textarea
+      id={label}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="mt-1"
+    />
+  </div>
+);
+
+const SelectSetting: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}> = ({ label, value, onChange, options }) => (
+  <div>
+    <Label htmlFor={label}>{label}</Label>
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger id={label}>
+        <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option} value={option}>
+            {option}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  </div>
+);
+
+const ButtonGroupSetting: React.FC<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+}> = ({ label, value, onChange, options }) => (
+  <div>
+    <Label htmlFor={label}>{label}</Label>
+    <div className="flex space-x-2 mt-1">
+      {options.map((option) => (
+        <Button
+          key={option}
+          variant={value === option ? "default" : "outline"}
+          onClick={() => onChange(option)}
+        >
+          {option}
+        </Button>
+      ))}
+    </div>
+  </div>
+);
+
+const SliderSetting: React.FC<{
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min: number;
+  max: number;
+  step: number;
+}> = ({ label, value, onChange, min, max, step }) => (
+  <div>
+    <Label htmlFor={label}>{label}</Label>
+    <Slider
+      id={label}
+      min={min}
+      max={max}
+      step={step}
+      value={[value]}
+      onValueChange={([newValue]) => onChange(newValue)}
+    />
+  </div>
+);
 
 export default Settings;
