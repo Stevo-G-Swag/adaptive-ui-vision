@@ -8,7 +8,7 @@ interface WebSocketHookOptions {
   onClose?: () => void;
 }
 
-const CONNECTION_TIMEOUT = 10000; // 10 seconds
+const CONNECTION_TIMEOUT = 30000; // 30 seconds
 const MAX_RECONNECT_ATTEMPTS = 5;
 const BASE_RECONNECT_DELAY = 1000;
 
@@ -54,13 +54,13 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
 
     ws.current.onerror = (error) => {
       clearTimeout(connectionTimer);
-      console.error('WebSocket error:', error);
+      console.error('WebSocket error:', error.message, error);
       if (options.onError) options.onError(error);
     };
 
     ws.current.onclose = () => {
       clearTimeout(connectionTimer);
-      console.log('WebSocket disconnected');
+      console.log('WebSocket disconnected. Reason:', event.reason);
       setConnectionStatus('disconnected');
       if (options.onClose) options.onClose();
       handleReconnect();
