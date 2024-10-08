@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mic, Settings as SettingsIcon, FileText } from 'lucide-react';
 import Settings from './Settings';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -26,95 +27,51 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [maxTokens, setMaxTokens] = useState<number>(4096);
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
   const { toast } = useToast();
-  const ws = useRef<WebSocket | null>(null);
-  const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
 
-  const connectWebSocket = useCallback(() => {
-    ws.current = new WebSocket(WS_URL);
-
-    ws.current.onopen = () => {
-      console.log("Connected to server.");
-      reconnectAttempts.current = 0;
-      sendInitialMessage();
-    };
-
-    ws.current.onmessage = (event) => {
-      const message = JSON.parse(event.data.toString());
-      handleIncomingMessage(message);
-    };
-
-    ws.current.onerror = (error) => {
-      console.error("WebSocket error:", error);
-      toast({ title: 'Connection Error', description: 'Failed to connect to the server. Please try again.', variant: 'destructive' });
-    };
-
-    ws.current.onclose = () => {
-      console.log("WebSocket connection closed. Attempting to reconnect...");
-      if (reconnectAttempts.current < maxReconnectAttempts) {
-        reconnectAttempts.current++;
-        setTimeout(connectWebSocket, 5000 * reconnectAttempts.current);
-      } else {
-        toast({ title: 'Connection Failed', description: 'Unable to establish a connection after multiple attempts. Please try again later.', variant: 'destructive' });
-      }
-    };
-  }, [toast]);
+  const { sendMessage, connectionStatus } = useWebSocket(WS_URL, {
+    onOpen: sendInitialMessage,
+    onMessage: handleIncomingMessage,
+    onError: () => toast({ title: 'Connection Error', description: 'Failed to connect to the server. Retrying...', variant: 'destructive' }),
+    onClose: () => toast({ title: 'Connection Closed', description: 'WebSocket connection closed. Attempting to reconnect...', variant: 'destructive' }),
+  });
 
   useEffect(() => {
-    connectWebSocket();
-    return () => {
-      if (ws.current) {
-        ws.current.close();
-      }
-    };
-  }, [connectWebSocket]);
-
-  const sendInitialMessage = () => {
-    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["text"],
-          instructions: systemMessage,
-        }
-      }));
+    if (connectionStatus === 'connected') {
+      toast({ title: 'Connected', description: 'Successfully connected to the server.', variant: 'default' });
+    } else if (connectionStatus === 'disconnected') {
+      toast({ title: 'Disconnected', description: 'Lost connection to the server. Attempting to reconnect...', variant: 'destructive' });
     }
-  };
+  }, [connectionStatus, toast]);
 
-  const handleIncomingMessage = (message: any) => {
+  function sendInitialMessage() {
+    sendMessage(JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["text"],
+        instructions: systemMessage,
+      }
+    }));
+  }
+
+  function handleIncomingMessage(message: any) {
     if (message.type === 'response.text.delta') {
       setConversation(prev => [...prev, message.delta]);
     } else if (message.type === 'response.done') {
       toast({ title: 'Response Complete', description: 'The AI has finished its response.' });
     }
-  };
-
-  const sendMessage = useCallback((message: string) => {
-    if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-      toast({ title: 'Connection Error', description: 'Not connected to the server. Please try again.', variant: 'destructive' });
-      return;
-    }
-    
-    try {
-      ws.current.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'user',
-          content: [{ type: 'input_text', text: message }]
-        }
-      }));
-
-      ws.current.send(JSON.stringify({ type: 'response.create' }));
-    } catch (error) {
-      console.error('Error sending message:', error);
-      toast({ title: 'Send Error', description: 'Failed to send message. Please try again.', variant: 'destructive' });
-    }
-  }, [toast]);
+  }
 
   const onSubmit = handleSubmit(({ message }) => {
     setConversation(prev => [...prev, `User: ${message}`]);
-    sendMessage(message);
+    sendMessage(JSON.stringify({
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: message }]
+      }
+    }));
+    sendMessage(JSON.stringify({ type: 'response.create' }));
     reset();
   });
 
@@ -155,8 +112,8 @@ const AdaptiveUIGenerator: React.FC = () => {
           </div>
           <form onSubmit={onSubmit} className="flex space-x-2">
             <Input {...register('message')} placeholder="Type your message..." className="flex-grow" />
-            <Button type="submit">Send</Button>
-            <Button type="button" onClick={startListening} variant="outline">
+            <Button type="submit" disabled={connectionStatus !== 'connected'}>Send</Button>
+            <Button type="button" onClick={startListening} variant="outline" disabled={connectionStatus !== 'connected'}>
               <Mic className={`w-4 h-4 ${isListening ? 'text-red-500' : ''}`} />
             </Button>
           </form>
