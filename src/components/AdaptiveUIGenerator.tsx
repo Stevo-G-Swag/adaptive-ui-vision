@@ -47,12 +47,16 @@ const AdaptiveUIGenerator: React.FC = () => {
   }, [connectionStatus]);
 
   function addLog(type: LogEntry['type'], message: string) {
-    const newLog: LogEntry = {
-      timestamp: new Date().toISOString(),
-      type,
-      message,
-    };
-    setLogs(prevLogs => [...prevLogs, newLog]);
+    setLogs(prevLogs => {
+      const newLog: LogEntry = {
+        timestamp: new Date().toISOString(),
+        type,
+        message,
+      };
+      // Limit the number of logs to prevent excessive rendering
+      const updatedLogs = [...prevLogs, newLog].slice(-100);
+      return updatedLogs;
+    });
   }
 
   function sendInitialMessage() {
@@ -68,11 +72,6 @@ const AdaptiveUIGenerator: React.FC = () => {
     } catch (error) {
       console.error('Error sending initial message:', error);
       addLog('error', 'Failed to send initial message to the server.');
-      toast({
-        title: 'Initialization Error',
-        description: 'Failed to send initial message to the server.',
-        variant: 'destructive',
-      });
     }
   }
 
@@ -81,43 +80,26 @@ const AdaptiveUIGenerator: React.FC = () => {
       if (message.type === 'response.text.delta') {
         setConversation(prev => [...prev, message.delta]);
         speakText(message.delta);
-        addLog('ai', `Received message: ${message.delta}`);
+        // Reduce log frequency for incoming messages
+        if (Math.random() < 0.1) { // Log only 10% of messages
+          addLog('ai', `Received message: ${message.delta}`);
+        }
       } else if (message.type === 'response.done') {
         addLog('system', 'AI response complete.');
-        toast({
-          title: 'Response Complete',
-          description: 'The AI has finished its response.',
-          variant: 'default',
-        });
       }
     } catch (error) {
       console.error('Error handling incoming message:', error);
       addLog('error', 'An error occurred while processing the incoming message.');
-      toast({
-        title: 'Message Error',
-        description: 'An error occurred while processing the incoming message.',
-        variant: 'destructive',
-      });
     }
   }
 
   function handleWebSocketError(error: Event) {
     console.error('WebSocket error:', error);
     addLog('error', 'WebSocket connection error.');
-    toast({
-      title: 'Connection Error',
-      description: 'An error occurred with the WebSocket connection.',
-      variant: 'destructive',
-    });
   }
 
   function handleWebSocketClose() {
     addLog('system', 'WebSocket connection closed.');
-    toast({
-      title: 'Connection Closed',
-      description: 'WebSocket connection closed. The application will attempt to reconnect.',
-      variant: 'destructive',
-    });
   }
 
   const onSubmit = handleSubmit(({ message }) => {

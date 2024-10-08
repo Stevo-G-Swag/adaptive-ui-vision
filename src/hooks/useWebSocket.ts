@@ -9,15 +9,21 @@ interface WebSocketHookOptions {
 }
 
 const CONNECTION_TIMEOUT = 10000; // 10 seconds
+const MAX_RECONNECT_ATTEMPTS = 5;
+const BASE_RECONNECT_DELAY = 1000;
 
 export function useWebSocket(url: string, options: WebSocketHookOptions) {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const ws = useRef<WebSocket | null>(null);
   const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
-  const baseReconnectDelay = 1000;
+  const reconnectTimeoutId = useRef<NodeJS.Timeout | null>(null);
 
   const connect = useCallback(() => {
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
+      return;
+    }
+
     ws.current = new WebSocket(url);
     setConnectionStatus('connecting');
 
@@ -25,11 +31,7 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
       if (ws.current && ws.current.readyState !== WebSocket.OPEN) {
         ws.current.close();
         setConnectionStatus('disconnected');
-        toast({
-          title: 'Connection Timeout',
-          description: 'Failed to connect to the server. Please try again.',
-          variant: 'destructive',
-        });
+        handleReconnect();
       }
     }, CONNECTION_TIMEOUT);
 
@@ -38,11 +40,6 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
       console.log('WebSocket connected');
       setConnectionStatus('connected');
       reconnectAttempts.current = 0;
-      toast({
-        title: 'Connected',
-        description: 'Successfully connected to the server.',
-        variant: 'default',
-      });
       if (options.onOpen) options.onOpen();
     };
 
@@ -52,22 +49,12 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
         if (options.onMessage) options.onMessage(data);
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
-        toast({
-          title: 'Message Error',
-          description: 'Failed to parse incoming message.',
-          variant: 'destructive',
-        });
       }
     };
 
     ws.current.onerror = (error) => {
       clearTimeout(connectionTimer);
       console.error('WebSocket error:', error);
-      toast({
-        title: 'Connection Error',
-        description: 'An error occurred with the WebSocket connection.',
-        variant: 'destructive',
-      });
       if (options.onError) options.onError(error);
     };
 
@@ -75,39 +62,42 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
       clearTimeout(connectionTimer);
       console.log('WebSocket disconnected');
       setConnectionStatus('disconnected');
-      toast({
-        title: 'Disconnected',
-        description: 'Lost connection to the server.',
-        variant: 'destructive',
-      });
       if (options.onClose) options.onClose();
-
-      if (reconnectAttempts.current < maxReconnectAttempts) {
-        const delay = Math.min(baseReconnectDelay * 2 ** reconnectAttempts.current, 30000);
-        toast({
-          title: 'Reconnecting',
-          description: `Attempting to reconnect in ${delay / 1000} seconds...`,
-          variant: 'default',
-        });
-        setTimeout(() => {
-          reconnectAttempts.current++;
-          connect();
-        }, delay);
-      } else {
-        toast({
-          title: 'Connection Failed',
-          description: 'Max reconnection attempts reached. Please try again later.',
-          variant: 'destructive',
-        });
-      }
+      handleReconnect();
     };
   }, [url, options]);
+
+  const handleReconnect = useCallback(() => {
+    if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(BASE_RECONNECT_DELAY * 2 ** reconnectAttempts.current, 30000);
+      console.log(`Attempting to reconnect in ${delay / 1000} seconds...`);
+      
+      if (reconnectTimeoutId.current) {
+        clearTimeout(reconnectTimeoutId.current);
+      }
+
+      reconnectTimeoutId.current = setTimeout(() => {
+        reconnectAttempts.current++;
+        connect();
+      }, delay);
+    } else {
+      console.error('Max reconnection attempts reached');
+      toast({
+        title: 'Connection Failed',
+        description: 'Max reconnection attempts reached. Please try again later.',
+        variant: 'destructive',
+      });
+    }
+  }, [connect]);
 
   useEffect(() => {
     connect();
     return () => {
       if (ws.current) {
         ws.current.close();
+      }
+      if (reconnectTimeoutId.current) {
+        clearTimeout(reconnectTimeoutId.current);
       }
     };
   }, [connect]);
