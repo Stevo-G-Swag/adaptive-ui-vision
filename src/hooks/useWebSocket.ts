@@ -8,6 +8,8 @@ interface WebSocketHookOptions {
   onClose?: () => void;
 }
 
+const CONNECTION_TIMEOUT = 10000; // 10 seconds
+
 export function useWebSocket(url: string, options: WebSocketHookOptions) {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const ws = useRef<WebSocket | null>(null);
@@ -19,7 +21,20 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     ws.current = new WebSocket(url);
     setConnectionStatus('connecting');
 
+    const connectionTimer = setTimeout(() => {
+      if (ws.current && ws.current.readyState !== WebSocket.OPEN) {
+        ws.current.close();
+        setConnectionStatus('disconnected');
+        toast({
+          title: 'Connection Timeout',
+          description: 'Failed to connect to the server. Please try again.',
+          variant: 'destructive',
+        });
+      }
+    }, CONNECTION_TIMEOUT);
+
     ws.current.onopen = () => {
+      clearTimeout(connectionTimer);
       console.log('WebSocket connected');
       setConnectionStatus('connected');
       reconnectAttempts.current = 0;
@@ -46,6 +61,7 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     };
 
     ws.current.onerror = (error) => {
+      clearTimeout(connectionTimer);
       console.error('WebSocket error:', error);
       toast({
         title: 'Connection Error',
@@ -56,6 +72,7 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     };
 
     ws.current.onclose = () => {
+      clearTimeout(connectionTimer);
       console.log('WebSocket disconnected');
       setConnectionStatus('disconnected');
       toast({

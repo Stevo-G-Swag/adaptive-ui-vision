@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Mic, Settings as SettingsIcon, FileText, StopCircle } from 'lucide-react';
 import Settings from './Settings';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import ConversationView from './ConversationView';
+import MessageInput from './MessageInput';
 
 const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -223,21 +225,15 @@ const AdaptiveUIGenerator: React.FC = () => {
         </div>
 
         <TabsContent value="conversation" className="p-4">
-          <div className="h-[60vh] overflow-y-auto mb-4 p-4 bg-gray-100 rounded-md">
-            {conversation.map((msg, index) => (
-              <div key={index} className="mb-2">{msg}</div>
-            ))}
-          </div>
-          <form onSubmit={onSubmit} className="flex space-x-2">
-            <Input {...register('message')} placeholder="Type your message..." className="flex-grow" />
-            <Button type="submit" disabled={connectionStatus !== 'connected'}>Send</Button>
-            <Button type="button" onClick={startListening} variant="outline" disabled={connectionStatus !== 'connected'}>
-              <Mic className={`w-4 h-4 ${isListening ? 'text-red-500' : ''}`} />
-            </Button>
-            <Button type="button" onClick={interruptAI} variant="outline" disabled={connectionStatus !== 'connected'}>
-              <StopCircle className="w-4 h-4" />
-            </Button>
-          </form>
+          <ConversationView conversation={conversation} />
+          <MessageInput
+            onSubmit={onSubmit}
+            register={register}
+            startListening={startListening}
+            interruptAI={interruptAI}
+            isListening={isListening}
+            connectionStatus={connectionStatus}
+          />
         </TabsContent>
 
         <TabsContent value="settings" className="p-4">
