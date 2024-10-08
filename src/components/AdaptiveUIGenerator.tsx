@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -26,64 +26,141 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [temperature, setTemperature] = useState<number>(0.8);
   const [maxTokens, setMaxTokens] = useState<number>(4096);
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
-  const { toast } = useToast();
 
   const { sendMessage, connectionStatus } = useWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
     onMessage: handleIncomingMessage,
-    onError: () => toast({ title: 'Connection Error', description: 'Failed to connect to the server. Retrying...', variant: 'destructive' }),
-    onClose: () => toast({ title: 'Connection Closed', description: 'WebSocket connection closed. Attempting to reconnect...', variant: 'destructive' }),
+    onError: handleWebSocketError,
+    onClose: handleWebSocketClose,
   });
 
   useEffect(() => {
     if (connectionStatus === 'connected') {
-      toast({ title: 'Connected', description: 'Successfully connected to the server.', variant: 'default' });
-    } else if (connectionStatus === 'disconnected') {
-      toast({ title: 'Disconnected', description: 'Lost connection to the server. Attempting to reconnect...', variant: 'destructive' });
+      toast({
+        title: 'Connected',
+        description: 'Successfully connected to the server.',
+        variant: 'default',
+      });
     }
-  }, [connectionStatus, toast]);
+  }, [connectionStatus]);
 
   function sendInitialMessage() {
-    sendMessage(JSON.stringify({
-      type: "response.create",
-      response: {
-        modalities: ["text"],
-        instructions: systemMessage,
-      }
-    }));
+    try {
+      sendMessage(JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["text"],
+          instructions: systemMessage,
+        }
+      }));
+    } catch (error) {
+      console.error('Error sending initial message:', error);
+      toast({
+        title: 'Initialization Error',
+        description: 'Failed to send initial message to the server.',
+        variant: 'destructive',
+      });
+    }
   }
 
   function handleIncomingMessage(message: any) {
-    if (message.type === 'response.text.delta') {
-      setConversation(prev => [...prev, message.delta]);
-    } else if (message.type === 'response.done') {
-      toast({ title: 'Response Complete', description: 'The AI has finished its response.' });
+    try {
+      if (message.type === 'response.text.delta') {
+        setConversation(prev => [...prev, message.delta]);
+      } else if (message.type === 'response.done') {
+        toast({
+          title: 'Response Complete',
+          description: 'The AI has finished its response.',
+          variant: 'default',
+        });
+      }
+    } catch (error) {
+      console.error('Error handling incoming message:', error);
+      toast({
+        title: 'Message Error',
+        description: 'An error occurred while processing the incoming message.',
+        variant: 'destructive',
+      });
     }
   }
 
+  function handleWebSocketError(error: Event) {
+    console.error('WebSocket error:', error);
+    toast({
+      title: 'Connection Error',
+      description: 'An error occurred with the WebSocket connection.',
+      variant: 'destructive',
+    });
+  }
+
+  function handleWebSocketClose() {
+    toast({
+      title: 'Connection Closed',
+      description: 'WebSocket connection closed. The application will attempt to reconnect.',
+      variant: 'destructive',
+    });
+  }
+
   const onSubmit = handleSubmit(({ message }) => {
-    setConversation(prev => [...prev, `User: ${message}`]);
-    sendMessage(JSON.stringify({
-      type: 'conversation.item.create',
-      item: {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: message }]
-      }
-    }));
-    sendMessage(JSON.stringify({ type: 'response.create' }));
-    reset();
+    try {
+      setConversation(prev => [...prev, `User: ${message}`]);
+      sendMessage(JSON.stringify({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: message }]
+        }
+      }));
+      sendMessage(JSON.stringify({ type: 'response.create' }));
+      reset();
+      toast({
+        title: 'Message Sent',
+        description: 'Your message has been sent successfully.',
+        variant: 'default',
+      });
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: 'Send Error',
+        description: 'Failed to send your message. Please try again.',
+        variant: 'destructive',
+      });
+    }
   });
 
   const startListening = () => {
     if (!isListening) {
       setIsListening(true);
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        toast({
+          title: 'Speech Recognition Unavailable',
+          description: 'Your browser does not support speech recognition.',
+          variant: 'destructive',
+        });
+        setIsListening(false);
+        return;
+      }
       const recognition = new SpeechRecognition();
       recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         setConversation(prev => [...prev, `User: ${transcript}`]);
         sendMessage(transcript);
+        toast({
+          title: 'Speech Recognized',
+          description: 'Your speech has been converted to text.',
+          variant: 'default',
+        });
+      };
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        toast({
+          title: 'Speech Recognition Error',
+          description: `An error occurred: ${event.error}`,
+          variant: 'destructive',
+        });
+        setIsListening(false);
       };
       recognition.onend = () => setIsListening(false);
       recognition.start();
