@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from '@/hooks/use-toast';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, Settings as SettingsIcon, FileText, StopCircle } from 'lucide-react';
+import { Settings as SettingsIcon, FileText } from 'lucide-react';
 import Settings from './Settings';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import ConversationView from './ConversationView';
 import MessageInput from './MessageInput';
+import LogViewer, { LogEntry } from './LogViewer';
 
-const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+const API_KEY = 'sk-bks-54d86fb254ccaaba45930425c80fac6f841d0741ec449972';
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
 
 const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [systemMessage, setSystemMessage] = useState<string>(
@@ -28,6 +28,7 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [silenceDuration, setSilenceDuration] = useState<number>(500);
   const [temperature, setTemperature] = useState<number>(0.8);
   const [maxTokens, setMaxTokens] = useState<number>(4096);
+
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
   const synth = window.speechSynthesis;
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -41,13 +42,18 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   useEffect(() => {
     if (connectionStatus === 'connected') {
-      toast({
-        title: 'Connected',
-        description: 'Successfully connected to the server.',
-        variant: 'default',
-      });
+      addLog('system', 'Connected to the server.');
     }
   }, [connectionStatus]);
+
+  function addLog(type: LogEntry['type'], message: string) {
+    const newLog: LogEntry = {
+      timestamp: new Date().toISOString(),
+      type,
+      message,
+    };
+    setLogs(prevLogs => [...prevLogs, newLog]);
+  }
 
   function sendInitialMessage() {
     try {
@@ -58,8 +64,10 @@ const AdaptiveUIGenerator: React.FC = () => {
           instructions: systemMessage,
         }
       }));
+      addLog('system', 'Sent initial message to the server.');
     } catch (error) {
       console.error('Error sending initial message:', error);
+      addLog('error', 'Failed to send initial message to the server.');
       toast({
         title: 'Initialization Error',
         description: 'Failed to send initial message to the server.',
@@ -73,7 +81,9 @@ const AdaptiveUIGenerator: React.FC = () => {
       if (message.type === 'response.text.delta') {
         setConversation(prev => [...prev, message.delta]);
         speakText(message.delta);
+        addLog('ai', `Received message: ${message.delta}`);
       } else if (message.type === 'response.done') {
+        addLog('system', 'AI response complete.');
         toast({
           title: 'Response Complete',
           description: 'The AI has finished its response.',
@@ -82,6 +92,7 @@ const AdaptiveUIGenerator: React.FC = () => {
       }
     } catch (error) {
       console.error('Error handling incoming message:', error);
+      addLog('error', 'An error occurred while processing the incoming message.');
       toast({
         title: 'Message Error',
         description: 'An error occurred while processing the incoming message.',
@@ -92,6 +103,7 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   function handleWebSocketError(error: Event) {
     console.error('WebSocket error:', error);
+    addLog('error', 'WebSocket connection error.');
     toast({
       title: 'Connection Error',
       description: 'An error occurred with the WebSocket connection.',
@@ -100,6 +112,7 @@ const AdaptiveUIGenerator: React.FC = () => {
   }
 
   function handleWebSocketClose() {
+    addLog('system', 'WebSocket connection closed.');
     toast({
       title: 'Connection Closed',
       description: 'WebSocket connection closed. The application will attempt to reconnect.',
@@ -120,6 +133,7 @@ const AdaptiveUIGenerator: React.FC = () => {
       }));
       sendMessage(JSON.stringify({ type: 'response.create' }));
       reset();
+      addLog('user', `Sent message: ${message}`);
       toast({
         title: 'Message Sent',
         description: 'Your message has been sent successfully.',
@@ -127,6 +141,7 @@ const AdaptiveUIGenerator: React.FC = () => {
       });
     } catch (error) {
       console.error('Error sending message:', error);
+      addLog('error', 'Failed to send message.');
       toast({
         title: 'Send Error',
         description: 'Failed to send your message. Please try again.',
@@ -240,7 +255,6 @@ const AdaptiveUIGenerator: React.FC = () => {
           <Settings
             systemMessage={systemMessage}
             setSystemMessage={setSystemMessage}
-            voice={voice}
             setVoice={setVoice}
             serverTurnDetection={serverTurnDetection}
             setServerTurnDetection={setServerTurnDetection}
@@ -258,9 +272,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="logs" className="p-4">
-          <div className="h-[60vh] overflow-y-auto p-4 bg-gray-100 rounded-md">
-            <p>Logs will appear here</p>
-          </div>
+          <LogViewer logs={logs} />
         </TabsContent>
       </Tabs>
     </Card>
