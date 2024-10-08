@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Mic, Settings as SettingsIcon, FileText } from 'lucide-react';
+import { Mic, Settings as SettingsIcon, FileText, StopCircle } from 'lucide-react';
 import Settings from './Settings';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -15,6 +15,7 @@ const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2
 const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
   const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [systemMessage, setSystemMessage] = useState<string>(
     "Assist a real-time software developer in interacting with a full-stack agentic framework including creating and editing files using a cache API."
   );
@@ -26,8 +27,10 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [temperature, setTemperature] = useState<number>(0.8);
   const [maxTokens, setMaxTokens] = useState<number>(4096);
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
+  const synth = window.speechSynthesis;
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  const { sendMessage, connectionStatus } = useWebSocket(WS_URL, {
+  const { sendMessage, connectionStatus, interruptResponse } = useWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
     onMessage: handleIncomingMessage,
     onError: handleWebSocketError,
@@ -67,6 +70,7 @@ const AdaptiveUIGenerator: React.FC = () => {
     try {
       if (message.type === 'response.text.delta') {
         setConversation(prev => [...prev, message.delta]);
+        speakText(message.delta);
       } else if (message.type === 'response.done') {
         toast({
           title: 'Response Complete',
@@ -142,18 +146,26 @@ const AdaptiveUIGenerator: React.FC = () => {
         setIsListening(false);
         return;
       }
-      const recognition = new SpeechRecognition();
-      recognition.onresult = (event) => {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         setConversation(prev => [...prev, `User: ${transcript}`]);
-        sendMessage(transcript);
+        sendMessage(JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [{ type: 'input_text', text: transcript }]
+          }
+        }));
+        sendMessage(JSON.stringify({ type: 'response.create' }));
         toast({
           title: 'Speech Recognized',
-          description: 'Your speech has been converted to text.',
+          description: 'Your speech has been converted to text and sent.',
           variant: 'default',
         });
       };
-      recognition.onerror = (event) => {
+      recognitionRef.current.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         toast({
           title: 'Speech Recognition Error',
@@ -162,11 +174,40 @@ const AdaptiveUIGenerator: React.FC = () => {
         });
         setIsListening(false);
       };
-      recognition.onend = () => setIsListening(false);
-      recognition.start();
+      recognitionRef.current.onend = () => setIsListening(false);
+      recognitionRef.current.start();
     } else {
       setIsListening(false);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
     }
+  };
+
+  const speakText = (text: string) => {
+    if (!isSpeaking) {
+      setIsSpeaking(true);
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.onend = () => setIsSpeaking(false);
+      synth.speak(utterance);
+    }
+  };
+
+  const stopSpeaking = () => {
+    if (isSpeaking) {
+      synth.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  const interruptAI = () => {
+    interruptResponse();
+    stopSpeaking();
+    toast({
+      title: 'AI Interrupted',
+      description: 'The AI response has been interrupted.',
+      variant: 'default',
+    });
   };
 
   return (
@@ -192,6 +233,9 @@ const AdaptiveUIGenerator: React.FC = () => {
             <Button type="submit" disabled={connectionStatus !== 'connected'}>Send</Button>
             <Button type="button" onClick={startListening} variant="outline" disabled={connectionStatus !== 'connected'}>
               <Mic className={`w-4 h-4 ${isListening ? 'text-red-500' : ''}`} />
+            </Button>
+            <Button type="button" onClick={interruptAI} variant="outline" disabled={connectionStatus !== 'connected'}>
+              <StopCircle className="w-4 h-4" />
             </Button>
           </form>
         </TabsContent>

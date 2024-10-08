@@ -108,5 +108,18 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     }
   }, []);
 
-  return { sendMessage, connectionStatus };
+  const interruptResponse = useCallback(() => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({ type: 'response.interrupt' }));
+    } else {
+      console.error('WebSocket is not connected');
+      toast({
+        title: 'Interrupt Error',
+        description: 'Failed to interrupt response. WebSocket is not connected.',
+        variant: 'destructive',
+      });
+    }
+  }, []);
+
+  return { sendMessage, connectionStatus, interruptResponse };
 }
