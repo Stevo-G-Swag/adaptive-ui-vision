@@ -43,7 +43,7 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
       if (options.onOpen) options.onOpen();
     };
 
-    ws.current.onmessage = (event) => {
+    ws.current.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
         if (options.onMessage) options.onMessage(data);
@@ -52,13 +52,13 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
       }
     };
 
-    ws.current.onerror = (error) => {
+    ws.current.onerror = (error: Event) => {
       clearTimeout(connectionTimer);
-      console.error('WebSocket error:', error.message, error);
+      console.error('WebSocket error:', error);
       if (options.onError) options.onError(error);
     };
 
-    ws.current.onclose = () => {
+    ws.current.onclose = (event: CloseEvent) => {
       clearTimeout(connectionTimer);
       console.log('WebSocket disconnected. Reason:', event.reason);
       setConnectionStatus('disconnected');
