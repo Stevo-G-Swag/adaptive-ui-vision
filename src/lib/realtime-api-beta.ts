@@ -5,6 +5,7 @@ export class RealtimeClient {
   private apiKey: string;
   private baseUrl: string;
   private eventListeners: { [key: string]: ((data: any) => void)[] } = {};
+  private model: string = 'gpt-4o-realtime-preview-2024-10-01';
 
   constructor(options: { apiKey: string; baseUrl: string }) {
     this.apiKey = options.apiKey;
