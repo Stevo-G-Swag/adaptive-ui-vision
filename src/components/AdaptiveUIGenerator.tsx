@@ -30,13 +30,15 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [language, setLanguage] = useState('en');
   const [model, setModel] = useState('gpt-4');
   const [isRecording, setIsRecording] = useState(false);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('openai_api_key') || '');
+  const [apiKey, setApiKey] = useState(localStorage.getItem('bricks_api_key') || '');
   const clientRef = useRef<RealtimeClient | null>(null);
   const { toast } = useToast();
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     if (apiKey) {
-      localStorage.setItem('openai_api_key', apiKey);
+      localStorage.setItem('bricks_api_key', apiKey);
       initializeClient();
     }
   }, [apiKey]);
@@ -46,7 +48,7 @@ const AdaptiveUIGenerator: React.FC = () => {
 
     clientRef.current = new RealtimeClient({
       apiKey,
-      baseUrl: process.env.BRICKS_BASE_URL || 'https://api.openai.com/v1'
+      baseUrl: process.env.BRICKS_BASE_URL || 'https://api.trybricks.ai/api/providers/openai'
     });
 
     clientRef.current.updateSession({
@@ -104,10 +106,12 @@ const AdaptiveUIGenerator: React.FC = () => {
     addLog('user', `Sent message: ${message}`);
   };
 
-  const toggleRecording = () => {
+  const toggleRecording = async () => {
     if (isRecording) {
       setIsRecording(false);
-      // Stop recording logic here
+      if (mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
     } else {
       if (!clientRef.current) {
         toast({
@@ -117,9 +121,34 @@ const AdaptiveUIGenerator: React.FC = () => {
         });
         return;
       }
-      setIsRecording(true);
-      // Start recording logic here
-      // You'll need to implement audio recording and streaming
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          audioChunksRef.current.push(event.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const int16Array = new Int16Array(arrayBuffer);
+          clientRef.current?.appendInputAudio(int16Array);
+          clientRef.current?.createResponse();
+        };
+
+        mediaRecorder.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Error accessing microphone:', error);
+        toast({
+          title: 'Microphone Error',
+          description: 'Failed to access the microphone',
+          variant: 'destructive',
+        });
+      }
     }
   };
 
@@ -150,7 +179,7 @@ const AdaptiveUIGenerator: React.FC = () => {
           <div className="mt-4 flex items-center space-x-2">
             <Input
               type="text"
-              placeholder="Enter your OpenAI API key"
+              placeholder="Enter your BricksLLM API key"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />

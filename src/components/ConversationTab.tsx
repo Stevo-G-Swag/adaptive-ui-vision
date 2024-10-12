@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from '@/hooks/use-toast';
 import ConversationView from './ConversationView';
@@ -18,7 +18,6 @@ const ConversationTab: React.FC<ConversationTabProps> = ({
   addLog
 }) => {
   const { register, handleSubmit, reset } = useForm<{ message: string }>();
-  const [isListening, setIsListening] = useState(false);
 
   const onSubmit = handleSubmit(({ message }) => {
     try {
@@ -41,24 +40,12 @@ const ConversationTab: React.FC<ConversationTabProps> = ({
     }
   });
 
-  const startListening = () => {
-    // Implement speech-to-text functionality here
-    setIsListening(true);
-  };
-
-  const stopListening = () => {
-    setIsListening(false);
-  };
-
   return (
     <>
       <ConversationView conversation={conversation} />
       <MessageInput
         onSubmit={onSubmit}
         register={register}
-        startListening={startListening}
-        stopListening={stopListening}
-        isListening={isListening}
       />
     </>
   );
