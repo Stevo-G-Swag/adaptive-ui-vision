@@ -1,4 +1,4 @@
-import { RealtimeClient } from '@openai/realtime-api-beta';
+import { RealtimeClient } from '../mocks/openai-realtime-api-beta';
 
 export const createRealtimeClient = (apiKey: string) => {
   const client = new RealtimeClient({
