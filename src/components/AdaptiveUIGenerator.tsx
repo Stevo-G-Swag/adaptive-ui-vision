@@ -1,29 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings as SettingsIcon, FileText, FolderOpen } from 'lucide-react';
-import { useCachedWebSocket } from '@/hooks/useCachedWebSocket';
+import { Settings as SettingsIcon, FileText, FolderOpen, Mic, MicOff } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import ConversationTab from './ConversationTab';
 import SettingsTab from './SettingsTab';
 import LogsTab from './LogsTab';
 import { LogEntry } from './LogViewer';
-import DynamicUIContainer from './DynamicUIContainer';
 import FileExplorer from './FileExplorer';
 import LanguageSelector from './LanguageSelector';
 import ModelSelector from './ModelSelector';
-import { useCollaborativeEditing } from '@/hooks/useCollaborativeEditing';
-import { translations } from '@/i18n/translations';
-
-const API_KEY = 'sk-bks-54d86fb254ccaaba45930425c80fac6f841d0741ec449972';
-const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
+import { useToast } from '@/hooks/use-toast';
+import { RealtimeClient } from '../lib/realtime-api-beta';
 
 const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [dynamicElements, setDynamicElements] = useState<Array<{ type: string; props: any }>>([]);
   const [settings, setSettings] = useState({
-    systemMessage: "You are an AI assistant capable of generating and modifying UI elements. When asked to create or modify UI elements, respond with a JSON object describing the changes.",
-    voice: "Alloy",
+    systemMessage: "You are an AI assistant capable of generating and modifying UI elements.",
+    voice: "alloy",
     serverTurnDetection: "Voice activity",
     threshold: 0.5,
     prefixPadding: 300,
@@ -33,16 +29,56 @@ const AdaptiveUIGenerator: React.FC = () => {
   });
   const [language, setLanguage] = useState('en');
   const [model, setModel] = useState('gpt-4');
-  const { collaborators, sendEdit } = useCollaborativeEditing({ projectId: '123', userId: 'user1' });
+  const [isRecording, setIsRecording] = useState(false);
+  const [apiKey, setApiKey] = useState(localStorage.getItem('openai_api_key') || '');
+  const clientRef = useRef<RealtimeClient | null>(null);
+  const { toast } = useToast();
 
-  const { sendMessage, connectionStatus, interruptResponse } = useCachedWebSocket(WS_URL, {
-    onOpen: sendInitialMessage,
-    onMessage: handleIncomingMessage,
-    onError: handleWebSocketError,
-    onClose: handleWebSocketClose,
-  });
+  useEffect(() => {
+    if (apiKey) {
+      localStorage.setItem('openai_api_key', apiKey);
+      initializeClient();
+    }
+  }, [apiKey]);
 
-  function addLog(type: LogEntry['type'], message: string) {
+  const initializeClient = async () => {
+    if (!apiKey) return;
+
+    clientRef.current = new RealtimeClient({
+      apiKey,
+      baseUrl: process.env.BRICKS_BASE_URL || 'https://api.openai.com/v1'
+    });
+
+    clientRef.current.updateSession({
+      instructions: settings.systemMessage,
+      voice: settings.voice,
+      turn_detection: settings.serverTurnDetection === 'Voice activity' ? 'server_vad' : 'disabled',
+      input_audio_transcription: { model: 'whisper-1' }
+    });
+
+    clientRef.current.on('conversation.updated', ({ item, delta }) => {
+      if (item.type === 'message' && item.role === 'assistant') {
+        setConversation(prev => [...prev, `Assistant: ${item.content[0].text}`]);
+      }
+    });
+
+    try {
+      await clientRef.current.connect();
+      toast({
+        title: 'Connected',
+        description: 'Successfully connected to the Realtime API',
+      });
+    } catch (error) {
+      console.error('Failed to connect:', error);
+      toast({
+        title: 'Connection Failed',
+        description: 'Failed to connect to the Realtime API',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const addLog = (type: LogEntry['type'], message: string) => {
     setLogs(prevLogs => {
       const newLog: LogEntry = {
         timestamp: new Date().toISOString(),
@@ -51,80 +87,56 @@ const AdaptiveUIGenerator: React.FC = () => {
       };
       return [...prevLogs.slice(-99), newLog];
     });
-  }
+  };
 
-  function sendInitialMessage() {
-    try {
-      sendMessage(JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["text"],
-          instructions: settings.systemMessage,
-          model: model,
-        }
-      }));
-      addLog('system', 'Sent initial message to the server.');
-    } catch (error) {
-      console.error('Error sending initial message:', error);
-      addLog('error', 'Failed to send initial message to the server.');
+  const handleSendMessage = (message: string) => {
+    if (!clientRef.current) {
+      toast({
+        title: 'Not Connected',
+        description: 'Please connect to the Realtime API first',
+        variant: 'destructive',
+      });
+      return;
     }
-  }
 
-  function handleIncomingMessage(message: any) {
-    try {
-      if (message.type === 'response.text.delta') {
-        setConversation(prev => [...prev, message.delta]);
-        if (Math.random() < 0.1) {
-          addLog('ai', `Received message: ${message.delta}`);
-        }
-        
-        if (message.delta.includes('{') && message.delta.includes('}')) {
-          try {
-            const uiInstructions = JSON.parse(message.delta);
-            updateDynamicUI(uiInstructions);
-          } catch (error) {
-            console.error('Error parsing UI instructions:', error);
-          }
-        }
-      } else if (message.type === 'response.done') {
-        addLog('system', 'AI response complete.');
+    setConversation(prev => [...prev, `User: ${message}`]);
+    clientRef.current.sendUserMessageContent([{ type: 'text', text: message }]);
+    addLog('user', `Sent message: ${message}`);
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      setIsRecording(false);
+      // Stop recording logic here
+    } else {
+      if (!clientRef.current) {
+        toast({
+          title: 'Not Connected',
+          description: 'Please connect to the Realtime API first',
+          variant: 'destructive',
+        });
+        return;
       }
-    } catch (error) {
-      console.error('Error handling incoming message:', error);
-      addLog('error', 'An error occurred while processing the incoming message.');
+      setIsRecording(true);
+      // Start recording logic here
+      // You'll need to implement audio recording and streaming
     }
-  }
-
-  function updateDynamicUI(instructions: any) {
-    setDynamicElements(prev => [...prev, instructions]);
-    sendEdit(instructions);
-  }
-
-  function handleWebSocketError(error: Event) {
-    console.error('WebSocket error:', error);
-    addLog('error', 'WebSocket connection error.');
-  }
-
-  function handleWebSocketClose() {
-    addLog('system', 'WebSocket connection closed.');
-  }
-
-  const t = translations[language];
+  };
 
   return (
     <Card className="w-full max-w-4xl mx-auto">
       <Tabs defaultValue="conversation" className="w-full">
         <div className="flex justify-between items-center p-4 border-b">
-          <h1 className="text-2xl font-bold">Realtime</h1>
+          <h1 className="text-2xl font-bold">Adaptive UI Generator</h1>
           <div className="flex space-x-2">
             <LanguageSelector currentLanguage={language} onLanguageChange={setLanguage} />
             <ModelSelector currentModel={model} onModelChange={setModel} />
           </div>
           <TabsList>
-            <TabsTrigger value="conversation">{t.conversation}</TabsTrigger>
-            <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />{t.settings}</TabsTrigger>
-            <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />{t.logs}</TabsTrigger>
-            <TabsTrigger value="files"><FolderOpen className="w-4 h-4 mr-2" />{t.files}</TabsTrigger>
+            <TabsTrigger value="conversation">Conversation</TabsTrigger>
+            <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />Settings</TabsTrigger>
+            <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
+            <TabsTrigger value="files"><FolderOpen className="w-4 h-4 mr-2" />Files</TabsTrigger>
           </TabsList>
         </div>
 
@@ -132,19 +144,20 @@ const AdaptiveUIGenerator: React.FC = () => {
           <ConversationTab
             conversation={conversation}
             setConversation={setConversation}
-            sendMessage={sendMessage}
-            connectionStatus={connectionStatus}
-            interruptResponse={interruptResponse}
+            sendMessage={handleSendMessage}
             addLog={addLog}
           />
-          <DynamicUIContainer elements={dynamicElements} />
-          <div className="mt-4">
-            <h3>Collaborators:</h3>
-            <ul>
-              {collaborators.map((collaborator, index) => (
-                <li key={index}>{collaborator}</li>
-              ))}
-            </ul>
+          <div className="mt-4 flex items-center space-x-2">
+            <Input
+              type="text"
+              placeholder="Enter your OpenAI API key"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+            <Button onClick={toggleRecording}>
+              {isRecording ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
+              {isRecording ? 'Stop' : 'Start'} Recording
+            </Button>
           </div>
         </TabsContent>
 
