@@ -7,6 +7,7 @@ import ConversationTab from './ConversationTab';
 import SettingsTab from './SettingsTab';
 import LogsTab from './LogsTab';
 import { LogEntry } from './LogViewer';
+import DynamicUIContainer from './DynamicUIContainer';
 
 const API_KEY = 'sk-bks-54d86fb254ccaaba45930425c80fac6f841d0741ec449972';
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -14,16 +15,7 @@ const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2
 const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [settings, setSettings] = useState({
-    systemMessage: "Assist a real-time software developer in interacting with a full-stack agentic framework including creating and editing files using a cache API.",
-    voice: "Alloy",
-    serverTurnDetection: "Voice activity",
-    threshold: 0.5,
-    prefixPadding: 300,
-    silenceDuration: 500,
-    temperature: 0.8,
-    maxTokens: 4096
-  });
+  const [dynamicElements, setDynamicElements] = useState<Array<{ type: string; props: any }>>([]);
 
   const { sendMessage, connectionStatus, interruptResponse } = useWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
@@ -55,7 +47,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         type: "response.create",
         response: {
           modalities: ["text"],
-          instructions: settings.systemMessage,
+          instructions: "You are an AI assistant capable of generating and modifying UI elements. When asked to create or modify UI elements, respond with a JSON object describing the changes.",
         }
       }));
       addLog('system', 'Sent initial message to the server.');
@@ -72,6 +64,16 @@ const AdaptiveUIGenerator: React.FC = () => {
         if (Math.random() < 0.1) {
           addLog('ai', `Received message: ${message.delta}`);
         }
+        
+        // Check if the message contains UI update instructions
+        if (message.delta.includes('{') && message.delta.includes('}')) {
+          try {
+            const uiInstructions = JSON.parse(message.delta);
+            updateDynamicUI(uiInstructions);
+          } catch (error) {
+            console.error('Error parsing UI instructions:', error);
+          }
+        }
       } else if (message.type === 'response.done') {
         addLog('system', 'AI response complete.');
       }
@@ -79,6 +81,10 @@ const AdaptiveUIGenerator: React.FC = () => {
       console.error('Error handling incoming message:', error);
       addLog('error', 'An error occurred while processing the incoming message.');
     }
+  }
+
+  function updateDynamicUI(instructions: any) {
+    setDynamicElements(prev => [...prev, instructions]);
   }
 
   function handleWebSocketError(error: Event) {
@@ -111,10 +117,11 @@ const AdaptiveUIGenerator: React.FC = () => {
             interruptResponse={interruptResponse}
             addLog={addLog}
           />
+          <DynamicUIContainer elements={dynamicElements} />
         </TabsContent>
 
         <TabsContent value="settings" className="p-4">
-          <SettingsTab settings={settings} setSettings={setSettings} />
+          <SettingsTab />
         </TabsContent>
 
         <TabsContent value="logs" className="p-4">

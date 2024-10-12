@@ -1,9 +1,8 @@
 import React from 'react';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
+import TextAreaSetting from './settings/TextAreaSetting';
+import SelectSetting from './settings/SelectSetting';
+import ButtonGroupSetting from './settings/ButtonGroupSetting';
+import SliderSetting from './settings/SliderSetting';
 
 interface SettingsProps {
   systemMessage: string;
@@ -87,87 +86,5 @@ const Settings: React.FC<SettingsProps> = (props) => {
     </div>
   );
 };
-
-const TextAreaSetting: React.FC<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}> = ({ label, value, onChange }) => (
-  <div>
-    <Label htmlFor={label}>{label}</Label>
-    <Textarea
-      id={label}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="mt-1"
-    />
-  </div>
-);
-
-const SelectSetting: React.FC<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}> = ({ label, value, onChange, options }) => (
-  <div>
-    <Label htmlFor={label}>{label}</Label>
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger id={label}>
-        <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  </div>
-);
-
-const ButtonGroupSetting: React.FC<{
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: string[];
-}> = ({ label, value, onChange, options }) => (
-  <div>
-    <Label htmlFor={label}>{label}</Label>
-    <div className="flex space-x-2 mt-1">
-      {options.map((option) => (
-        <Button
-          key={option}
-          variant={value === option ? "default" : "outline"}
-          onClick={() => onChange(option)}
-        >
-          {option}
-        </Button>
-      ))}
-    </div>
-  </div>
-);
-
-const SliderSetting: React.FC<{
-  label: string;
-  value: number;
-  onChange: (value: number) => void;
-  min: number;
-  max: number;
-  step: number;
-}> = ({ label, value, onChange, min, max, step }) => (
-  <div>
-    <Label htmlFor={label}>{label}</Label>
-    <Slider
-      id={label}
-      min={min}
-      max={max}
-      step={step}
-      value={[value]}
-      onValueChange={([newValue]) => onChange(newValue)}
-    />
-  </div>
-);
 
 export default Settings;
