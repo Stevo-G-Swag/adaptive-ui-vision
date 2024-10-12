@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { RealtimeClient } from '@openai/realtime-api-beta';
+import { RealtimeClient } from '../mocks/openai-realtime-api-beta';
 import { createRealtimeClient } from '../lib/realtimeClient';
 import { useToast } from '@/hooks/use-toast';
 import { addWeatherTool, addMemoryTool } from '../lib/tools';
