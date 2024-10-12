@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings as SettingsIcon, FileText } from 'lucide-react';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { Settings as SettingsIcon, FileText, FolderOpen } from 'lucide-react';
+import { useCachedWebSocket } from '@/hooks/useCachedWebSocket';
 import ConversationTab from './ConversationTab';
 import SettingsTab from './SettingsTab';
 import LogsTab from './LogsTab';
 import { LogEntry } from './LogViewer';
 import DynamicUIContainer from './DynamicUIContainer';
+import FileExplorer from './FileExplorer';
 
 const API_KEY = 'sk-bks-54d86fb254ccaaba45930425c80fac6f841d0741ec449972';
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -27,7 +28,7 @@ const AdaptiveUIGenerator: React.FC = () => {
     maxTokens: 4096
   });
 
-  const { sendMessage, connectionStatus, interruptResponse } = useWebSocket(WS_URL, {
+  const { sendMessage, connectionStatus, interruptResponse } = useCachedWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
     onMessage: handleIncomingMessage,
     onError: handleWebSocketError,
@@ -109,6 +110,7 @@ const AdaptiveUIGenerator: React.FC = () => {
             <TabsTrigger value="conversation">Conversation</TabsTrigger>
             <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />Settings</TabsTrigger>
             <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
+            <TabsTrigger value="files"><FolderOpen className="w-4 h-4 mr-2" />Files</TabsTrigger>
           </TabsList>
         </div>
 
@@ -130,6 +132,10 @@ const AdaptiveUIGenerator: React.FC = () => {
 
         <TabsContent value="logs" className="p-4">
           <LogsTab logs={logs} />
+        </TabsContent>
+
+        <TabsContent value="files" className="p-4">
+          <FileExplorer />
         </TabsContent>
       </Tabs>
     </Card>
