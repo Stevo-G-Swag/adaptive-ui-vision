@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings as SettingsIcon, FileText, FolderOpen, Mic, MicOff } from 'lucide-react';
@@ -7,12 +7,11 @@ import { Input } from '@/components/ui/input';
 import ConversationTab from './ConversationTab';
 import SettingsTab from './SettingsTab';
 import LogsTab from './LogsTab';
-import { LogEntry } from './LogViewer';
 import FileExplorer from './FileExplorer';
 import LanguageSelector from './LanguageSelector';
 import ModelSelector from './ModelSelector';
-import { useToast } from '@/hooks/use-toast';
-import { RealtimeClient } from '../lib/realtime-api-beta';
+import { useRealtimeAPI } from '../hooks/useRealtimeAPI';
+import { LogEntry } from './LogViewer';
 
 const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
@@ -29,56 +28,25 @@ const AdaptiveUIGenerator: React.FC = () => {
   });
   const [language, setLanguage] = useState('en');
   const [model, setModel] = useState('gpt-4');
-  const [isRecording, setIsRecording] = useState(false);
   const [apiKey, setApiKey] = useState(localStorage.getItem('bricks_api_key') || '');
-  const clientRef = useRef<RealtimeClient | null>(null);
-  const { toast } = useToast();
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+
+  const { isConnected, isRecording, sendMessage, toggleRecording, interruptResponse, client } = useRealtimeAPI(apiKey);
 
   useEffect(() => {
     if (apiKey) {
       localStorage.setItem('bricks_api_key', apiKey);
-      initializeClient();
     }
   }, [apiKey]);
 
-  const initializeClient = async () => {
-    if (!apiKey) return;
-
-    clientRef.current = new RealtimeClient({
-      apiKey,
-      baseUrl: import.meta.env.VITE_BRICKS_BASE_URL || 'https://api.trybricks.ai/api/providers/openai'
-    });
-
-    clientRef.current.updateSession({
-      instructions: settings.systemMessage,
-      voice: settings.voice,
-      turn_detection: settings.serverTurnDetection === 'Voice activity' ? 'server_vad' : 'disabled',
-      input_audio_transcription: { model: 'whisper-1' }
-    });
-
-    clientRef.current.on('conversation.updated', ({ item, delta }) => {
-      if (item.type === 'message' && item.role === 'assistant') {
-        setConversation(prev => [...prev, `Assistant: ${item.content[0].text}`]);
-      }
-    });
-
-    try {
-      await clientRef.current.connect();
-      toast({
-        title: 'Connected',
-        description: 'Successfully connected to the Realtime API',
-      });
-    } catch (error) {
-      console.error('Failed to connect:', error);
-      toast({
-        title: 'Connection Failed',
-        description: 'Failed to connect to the Realtime API',
-        variant: 'destructive',
+  useEffect(() => {
+    if (client) {
+      client.on('conversation.updated', ({ item, delta }) => {
+        if (item.type === 'message' && item.role === 'assistant') {
+          setConversation(prev => [...prev, `Assistant: ${item.content[0].text}`]);
+        }
       });
     }
-  };
+  }, [client]);
 
   const addLog = (type: LogEntry['type'], message: string) => {
     setLogs(prevLogs => {
@@ -92,64 +60,9 @@ const AdaptiveUIGenerator: React.FC = () => {
   };
 
   const handleSendMessage = (message: string) => {
-    if (!clientRef.current) {
-      toast({
-        title: 'Not Connected',
-        description: 'Please connect to the Realtime API first',
-        variant: 'destructive',
-      });
-      return;
-    }
-
     setConversation(prev => [...prev, `User: ${message}`]);
-    clientRef.current.sendUserMessageContent([{ type: 'text', text: message }]);
+    sendMessage(message);
     addLog('user', `Sent message: ${message}`);
-  };
-
-  const toggleRecording = async () => {
-    if (isRecording) {
-      setIsRecording(false);
-      if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.stop();
-      }
-    } else {
-      if (!clientRef.current) {
-        toast({
-          title: 'Not Connected',
-          description: 'Please connect to the Realtime API first',
-          variant: 'destructive',
-        });
-        return;
-      }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-        audioChunksRef.current = [];
-
-        mediaRecorder.ondataavailable = (event) => {
-          audioChunksRef.current.push(event.data);
-        };
-
-        mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const int16Array = new Int16Array(arrayBuffer);
-          clientRef.current?.appendInputAudio(int16Array);
-          clientRef.current?.createResponse();
-        };
-
-        mediaRecorder.start();
-        setIsRecording(true);
-      } catch (error) {
-        console.error('Error accessing microphone:', error);
-        toast({
-          title: 'Microphone Error',
-          description: 'Failed to access the microphone',
-          variant: 'destructive',
-        });
-      }
-    }
   };
 
   return (
@@ -187,6 +100,7 @@ const AdaptiveUIGenerator: React.FC = () => {
               {isRecording ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
               {isRecording ? 'Stop' : 'Start'} Recording
             </Button>
+            <Button onClick={interruptResponse}>Interrupt</Button>
           </div>
         </TabsContent>
 
