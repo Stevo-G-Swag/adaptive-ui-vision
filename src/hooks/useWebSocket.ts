@@ -8,9 +8,9 @@ interface WebSocketHookOptions {
   onClose?: () => void;
 }
 
-const CONNECTION_TIMEOUT = 30000; // 30 seconds
-const MAX_RECONNECT_ATTEMPTS = 5;
-const BASE_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const INITIAL_RECONNECT_DELAY = 1000;
+const MAX_RECONNECT_DELAY = 30000;
 
 export function useWebSocket(url: string, options: WebSocketHookOptions) {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
@@ -27,16 +27,7 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     ws.current = new WebSocket(url);
     setConnectionStatus('connecting');
 
-    const connectionTimer = setTimeout(() => {
-      if (ws.current && ws.current.readyState !== WebSocket.OPEN) {
-        ws.current.close();
-        setConnectionStatus('disconnected');
-        handleReconnect();
-      }
-    }, CONNECTION_TIMEOUT);
-
     ws.current.onopen = () => {
-      clearTimeout(connectionTimer);
       console.log('WebSocket connected');
       setConnectionStatus('connected');
       reconnectAttempts.current = 0;
@@ -53,13 +44,16 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
     };
 
     ws.current.onerror = (error: Event) => {
-      clearTimeout(connectionTimer);
       console.error('WebSocket error:', error);
       if (options.onError) options.onError(error);
+      toast({
+        title: 'Connection Error',
+        description: 'An error occurred with the WebSocket connection.',
+        variant: 'destructive',
+      });
     };
 
     ws.current.onclose = (event: CloseEvent) => {
-      clearTimeout(connectionTimer);
       console.log('WebSocket disconnected. Reason:', event.reason);
       setConnectionStatus('disconnected');
       if (options.onClose) options.onClose();
@@ -69,7 +63,10 @@ export function useWebSocket(url: string, options: WebSocketHookOptions) {
 
   const handleReconnect = useCallback(() => {
     if (reconnectAttempts.current < MAX_RECONNECT_ATTEMPTS) {
-      const delay = Math.min(BASE_RECONNECT_DELAY * 2 ** reconnectAttempts.current, 30000);
+      const delay = Math.min(
+        INITIAL_RECONNECT_DELAY * Math.pow(2, reconnectAttempts.current),
+        MAX_RECONNECT_DELAY
+      );
       console.log(`Attempting to reconnect in ${delay / 1000} seconds...`);
       
       if (reconnectTimeoutId.current) {
