@@ -9,6 +9,10 @@ import LogsTab from './LogsTab';
 import { LogEntry } from './LogViewer';
 import DynamicUIContainer from './DynamicUIContainer';
 import FileExplorer from './FileExplorer';
+import LanguageSelector from './LanguageSelector';
+import ModelSelector from './ModelSelector';
+import { useCollaborativeEditing } from '@/hooks/useCollaborativeEditing';
+import { translations } from '@/i18n/translations';
 
 const API_KEY = 'sk-bks-54d86fb254ccaaba45930425c80fac6f841d0741ec449972';
 const WS_URL = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01";
@@ -27,6 +31,9 @@ const AdaptiveUIGenerator: React.FC = () => {
     temperature: 0.8,
     maxTokens: 4096
   });
+  const [language, setLanguage] = useState('en');
+  const [model, setModel] = useState('gpt-4');
+  const { collaborators, sendEdit } = useCollaborativeEditing({ projectId: '123', userId: 'user1' });
 
   const { sendMessage, connectionStatus, interruptResponse } = useCachedWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
@@ -53,6 +60,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         response: {
           modalities: ["text"],
           instructions: settings.systemMessage,
+          model: model,
         }
       }));
       addLog('system', 'Sent initial message to the server.');
@@ -70,7 +78,6 @@ const AdaptiveUIGenerator: React.FC = () => {
           addLog('ai', `Received message: ${message.delta}`);
         }
         
-        // Check if the message contains UI update instructions
         if (message.delta.includes('{') && message.delta.includes('}')) {
           try {
             const uiInstructions = JSON.parse(message.delta);
@@ -90,6 +97,7 @@ const AdaptiveUIGenerator: React.FC = () => {
 
   function updateDynamicUI(instructions: any) {
     setDynamicElements(prev => [...prev, instructions]);
+    sendEdit(instructions);
   }
 
   function handleWebSocketError(error: Event) {
@@ -101,16 +109,22 @@ const AdaptiveUIGenerator: React.FC = () => {
     addLog('system', 'WebSocket connection closed.');
   }
 
+  const t = translations[language];
+
   return (
     <Card className="w-full max-w-4xl mx-auto">
       <Tabs defaultValue="conversation" className="w-full">
         <div className="flex justify-between items-center p-4 border-b">
           <h1 className="text-2xl font-bold">Realtime</h1>
+          <div className="flex space-x-2">
+            <LanguageSelector currentLanguage={language} onLanguageChange={setLanguage} />
+            <ModelSelector currentModel={model} onModelChange={setModel} />
+          </div>
           <TabsList>
-            <TabsTrigger value="conversation">Conversation</TabsTrigger>
-            <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />Settings</TabsTrigger>
-            <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />Logs</TabsTrigger>
-            <TabsTrigger value="files"><FolderOpen className="w-4 h-4 mr-2" />Files</TabsTrigger>
+            <TabsTrigger value="conversation">{t.conversation}</TabsTrigger>
+            <TabsTrigger value="settings"><SettingsIcon className="w-4 h-4 mr-2" />{t.settings}</TabsTrigger>
+            <TabsTrigger value="logs"><FileText className="w-4 h-4 mr-2" />{t.logs}</TabsTrigger>
+            <TabsTrigger value="files"><FolderOpen className="w-4 h-4 mr-2" />{t.files}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -124,6 +138,14 @@ const AdaptiveUIGenerator: React.FC = () => {
             addLog={addLog}
           />
           <DynamicUIContainer elements={dynamicElements} />
+          <div className="mt-4">
+            <h3>Collaborators:</h3>
+            <ul>
+              {collaborators.map((collaborator, index) => (
+                <li key={index}>{collaborator}</li>
+              ))}
+            </ul>
+          </div>
         </TabsContent>
 
         <TabsContent value="settings" className="p-4">
