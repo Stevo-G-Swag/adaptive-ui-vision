@@ -48,7 +48,7 @@ const AdaptiveUIGenerator: React.FC = () => {
 
     clientRef.current = new RealtimeClient({
       apiKey,
-      baseUrl: process.env.BRICKS_BASE_URL || 'https://api.trybricks.ai/api/providers/openai'
+      baseUrl: import.meta.env.VITE_BRICKS_BASE_URL || 'https://api.trybricks.ai/api/providers/openai'
     });
 
     clientRef.current.updateSession({
