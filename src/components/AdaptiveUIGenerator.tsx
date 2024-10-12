@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings as SettingsIcon, FileText } from 'lucide-react';
@@ -16,6 +16,16 @@ const AdaptiveUIGenerator: React.FC = () => {
   const [conversation, setConversation] = useState<string[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [dynamicElements, setDynamicElements] = useState<Array<{ type: string; props: any }>>([]);
+  const [settings, setSettings] = useState({
+    systemMessage: "You are an AI assistant capable of generating and modifying UI elements. When asked to create or modify UI elements, respond with a JSON object describing the changes.",
+    voice: "Alloy",
+    serverTurnDetection: "Voice activity",
+    threshold: 0.5,
+    prefixPadding: 300,
+    silenceDuration: 500,
+    temperature: 0.8,
+    maxTokens: 4096
+  });
 
   const { sendMessage, connectionStatus, interruptResponse } = useWebSocket(WS_URL, {
     onOpen: sendInitialMessage,
@@ -23,12 +33,6 @@ const AdaptiveUIGenerator: React.FC = () => {
     onError: handleWebSocketError,
     onClose: handleWebSocketClose,
   });
-
-  useEffect(() => {
-    if (connectionStatus === 'connected') {
-      addLog('system', 'Connected to the server.');
-    }
-  }, [connectionStatus]);
 
   function addLog(type: LogEntry['type'], message: string) {
     setLogs(prevLogs => {
@@ -47,7 +51,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         type: "response.create",
         response: {
           modalities: ["text"],
-          instructions: "You are an AI assistant capable of generating and modifying UI elements. When asked to create or modify UI elements, respond with a JSON object describing the changes.",
+          instructions: settings.systemMessage,
         }
       }));
       addLog('system', 'Sent initial message to the server.');
@@ -121,7 +125,7 @@ const AdaptiveUIGenerator: React.FC = () => {
         </TabsContent>
 
         <TabsContent value="settings" className="p-4">
-          <SettingsTab />
+          <SettingsTab settings={settings} setSettings={setSettings} />
         </TabsContent>
 
         <TabsContent value="logs" className="p-4">
