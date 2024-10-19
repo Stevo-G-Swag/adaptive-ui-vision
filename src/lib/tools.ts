@@ -1,4 +1,4 @@
-import { RealtimeClient } from '../mocks/openai-realtime-api-beta';
+import { RealtimeClient } from './realtime-api-beta';
 
 export const addWeatherTool = (client: RealtimeClient) => {
   client.addTool(
